@@ -1080,6 +1080,7 @@ where
             }
             Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) => {
                 state.dragging = None;
+                // TODO: let control_held = state.modifiers.contains(KEYBIND?);
                 if let Some(p) = cursor_position.position_in(layout.bounds()) {
                     let x = p.x - self.padding.left;
                     let y = p.y - self.padding.top;
@@ -1089,6 +1090,8 @@ where
 
                     let location = terminal
                         .viewport_to_point(TermPoint::new(row as usize, TermColumn(col as usize)));
+
+
                     if let Some(on_open_hyperlink) = &self.on_open_hyperlink {
                         if let Some(match_) = terminal
                             .regex_matches

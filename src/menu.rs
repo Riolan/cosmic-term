@@ -223,6 +223,7 @@ pub fn menu_bar<'a>(
                             Action::ColorSchemes(config.color_scheme_kind()),
                         ),
                         MenuItem::Button(fl!("menu-settings"), None, Action::Settings),
+                        MenuItem::Button(fl!("menu-keybinds"), None, Action::Keybinds),
                         MenuItem::Divider,
                         MenuItem::Button(fl!("menu-about"), None, Action::About),
                     ],

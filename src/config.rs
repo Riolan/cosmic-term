@@ -13,6 +13,10 @@ use std::sync::OnceLock;
 
 use crate::{fl, localize::LANGUAGE_SORTER};
 
+use crate::Action;
+use crate::key_bind::build_default_key_bindings;
+
+
 pub const CONFIG_VERSION: u64 = 1;
 pub const COSMIC_THEME_DARK: &str = "COSMIC Dark";
 pub const COSMIC_THEME_LIGHT: &str = "COSMIC Light";
@@ -41,6 +45,9 @@ impl AppTheme {
         }
     }
 }
+
+
+
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum ColorSchemeKind {
@@ -181,6 +188,17 @@ pub struct ColorScheme {
     pub dim: ColorSchemeAnsi,
 }
 
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ConfigKeyBinding {
+    // Using String initially for flexibility, conversion to internal key/modifier types happens later
+    #[serde(default)] // Make modifiers optional in config
+    pub key: String,
+    #[serde(default)] // Make modifiers optional in config
+    pub mods: String, // Or maybe Vec<String> or a custom type that parses "Control|Shift"
+    pub action: Action, // This uses your Action enum from earlier
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct ProfileId(pub u64);
@@ -216,6 +234,8 @@ impl Default for Profile {
     }
 }
 
+// See [https://github.com/pop-os/cosmic-term/pull/426]
+// for brief explanation behind config.
 #[derive(Clone, CosmicConfigEntry, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
     pub app_theme: AppTheme,
@@ -236,6 +256,7 @@ pub struct Config {
     pub syntax_theme_light: String,
     pub focus_follow_mouse: bool,
     pub default_profile: Option<ProfileId>,
+    pub key_bindings: Vec<ConfigKeyBinding>,
 }
 
 impl Default for Config {
@@ -259,6 +280,7 @@ impl Default for Config {
             syntax_theme_light: COSMIC_THEME_LIGHT.to_string(),
             use_bright_bold: false,
             default_profile: None,
+            key_bindings: build_default_key_bindings(),
         }
     }
 }

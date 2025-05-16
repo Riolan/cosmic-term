@@ -5,7 +5,8 @@ use alacritty_terminal::tty::Options;
 use alacritty_terminal::{event::Event as TermEvent, term, term::color::Colors as TermColors, tty};
 use cosmic::iced::clipboard::dnd::DndAction;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::menu::key_bind::KeyBind;
+use cosmic::widget::menu::key_bind::{KeyBind, Modifier};
+use cosmic::iced::widget::{Column, Row, Text, scrollable, container};
 use cosmic::widget::DndDestination;
 use cosmic::{
     action,
@@ -21,10 +22,18 @@ use cosmic::{
         mouse::{Button as MouseButton, Event as MouseEvent},
         stream, window, Alignment, Color, Event, Length, Limits, Padding, Point, Subscription,
     },
+    iced_core::{
+        keyboard::{
+            key::Named,
+        },
+    },
     style,
     widget::{self, button, pane_grid, segmented_button, PaneGrid},
     Application, ApplicationExt, Element,
 };
+
+
+
 use cosmic::{surface, Apply};
 use cosmic_files::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
 use cosmic_text::{fontdb::FaceInfo, Family, Stretch, Weight};
@@ -37,11 +46,11 @@ use std::{
     rc::Rc,
     sync::{atomic::Ordering, Mutex},
 };
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use config::{
-    AppTheme, ColorScheme, ColorSchemeId, ColorSchemeKind, Config, Profile, ProfileId,
-    CONFIG_VERSION,
+    AppTheme, ColorScheme, ColorSchemeId, ColorSchemeKind, Config, ConfigKeyBinding, Profile, ProfileId, CONFIG_VERSION
 };
 mod config;
 mod mouse_reporter;
@@ -120,8 +129,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (config_handler, config) = match cosmic_config::Config::new(App::APP_ID, CONFIG_VERSION) {
         Ok(config_handler) => {
-            let config = match Config::get_entry(&config_handler) {
-                Ok(ok) => ok,
+            let config: Config = match Config::get_entry(&config_handler) {
+                Ok(ok) => {
+                    ok
+                },
                 Err((errs, config)) => {
                     log::info!("errors loading config: {:?}", errs);
                     config
@@ -174,7 +185,8 @@ pub struct Flags {
     term_config: term::Config,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// Add Serialize and Deserialize here
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     About,
     ClearScrollback,
@@ -183,6 +195,7 @@ pub enum Action {
     CopyOrSigint,
     CopyPrimary,
     Find,
+    Keybinds,
     PaneFocusDown,
     PaneFocusLeft,
     PaneFocusRight,
@@ -194,6 +207,7 @@ pub enum Action {
     PastePrimary,
     ProfileOpen(ProfileId),
     Profiles,
+    SaveKeyBindings,
     SelectAll,
     Settings,
     ShowHeaderBar(bool),
@@ -230,6 +244,7 @@ impl Action {
             Self::CopyOrSigint => Message::CopyOrSigint(entity_opt),
             Self::CopyPrimary => Message::CopyPrimary(entity_opt),
             Self::Find => Message::Find(true),
+            Self::Keybinds => Message::ToggleContextPage(ContextPage::Keybinds),
             Self::PaneFocusDown => Message::PaneFocusAdjacent(pane_grid::Direction::Down),
             Self::PaneFocusLeft => Message::PaneFocusAdjacent(pane_grid::Direction::Left),
             Self::PaneFocusRight => Message::PaneFocusAdjacent(pane_grid::Direction::Right),
@@ -241,6 +256,7 @@ impl Action {
             Self::PastePrimary => Message::PastePrimary(entity_opt),
             Self::ProfileOpen(profile_id) => Message::ProfileOpen(*profile_id),
             Self::Profiles => Message::ToggleContextPage(ContextPage::Profiles),
+            Self::SaveKeyBindings => Message::SaveKeyBindings,
             Self::SelectAll => Message::SelectAll(entity_opt),
             Self::Settings => Message::ToggleContextPage(ContextPage::Settings),
             Self::ShowHeaderBar(show_headerbar) => Message::ShowHeaderBar(*show_headerbar),
@@ -334,6 +350,7 @@ pub enum Message {
     ProfileRemove(ProfileId),
     ProfileSyntaxTheme(ProfileId, ColorSchemeKind, usize),
     ProfileTabTitle(ProfileId, String),
+    SaveKeyBindings,
     Surface(surface::Action),
     SelectAll(Option<segmented_button::Entity>),
     ShowAdvancedFontSettings(bool),
@@ -353,6 +370,7 @@ pub enum Message {
     TermEventTx(mpsc::UnboundedSender<(pane_grid::Pane, segmented_button::Entity, TermEvent)>),
     ToggleContextPage(ContextPage),
     UpdateDefaultProfile((bool, ProfileId)),
+    UpdateKeyBindingsFromUI(Vec<ConfigKeyBinding>),
     UseBrightBold(bool),
     WindowClose,
     WindowNew,
@@ -369,6 +387,7 @@ pub enum ContextPage {
     ColorSchemes(ColorSchemeKind),
     Profiles,
     Settings,
+    Keybinds,
 }
 
 /// The [`App`] stores application-specific state.
@@ -412,6 +431,7 @@ pub struct App {
     profile_expanded: Option<ProfileId>,
     show_advanced_font_settings: bool,
     modifiers: Modifiers,
+    key_binding_map: HashMap<KeyBind, Action>,
 }
 
 impl App {
@@ -480,11 +500,119 @@ impl App {
         }
     }
 
+    // Helper function to parse key strings into the internal Key type
+    // This needs to handle named keys ("Enter", "Tab") and character keys ("A", ",").
+    // Needs to match the format expected in your ConfigKeyBinding.key string.
+    fn parse_key_string(key_str: &str) -> Key {
+        // Check for single character keys first
+        if key_str.len() == 1 {
+            // Be careful with casing if config strings might be lower/upper
+            Key::Character(key_str.into())
+        } else {
+            // Handle named keys (case-insensitive match is good)
+            match key_str.to_lowercase().as_str() {
+                "enter" => Key::Named(Named::Enter),
+                "tab" => Key::Named(Named::Tab),
+                "backspace" => Key::Named(Named::Backspace),
+                "escape" => Key::Named(Named::Escape),
+                "delete" => Key::Named(Named::Delete),
+                "home" => Key::Named(Named::Home),
+                "end" => Key::Named(Named::End),
+                "pageup" => Key::Named(Named::PageUp),
+                "pagedown" => Key::Named(Named::PageDown),
+                "arrowleft" => Key::Named(Named::ArrowLeft),
+                "arrowright" => Key::Named(Named::ArrowRight),
+                "arrowup" => Key::Named(Named::ArrowUp),
+                "arrowdown" => Key::Named(Named::ArrowDown),
+                "ctrl" => Key::Named(Named::Control),
+                // Add other named keys you want to support from iced_core::keyboard::key::Named
+                "f1" => Key::Named(Named::F1),
+                "f2" => Key::Named(Named::F2),
+                // ... F3 to F12 ...
+                // ... other special keys like 'space', 'plus', 'minus' etc if you use them ...
+
+                // --- CORRECTED FALLBACK ---
+                // If the string doesn't match a single char or a known named key,
+                // it's an unrecognized key string. It's better to return an unknown key
+                // or log a warning than default to 'Enter'.
+                _ => {
+                    log::warn!("Unknown key string in config: {}", key_str);
+                    Key::Unidentified // Indicate an unknown key
+                }
+            }
+        }
+    }
+
+
+
+    // The function to update the key binding map from loaded config
+    // Helper function to parse modifier strings (e.g., "Control|Shift")
+    // into the Vec<Modifier> needed for KeyBind.
+    fn parse_modifier_string(mods_str: &str) -> Vec<Modifier> {
+        let mut modifiers_vec = Vec::new();
+        for part in mods_str.split('|') {
+            match part.trim().to_lowercase().as_str() {
+                "ctrl" => modifiers_vec.push(Modifier::Ctrl), // Assuming Modifier::Ctrl exists
+                "shift" => modifiers_vec.push(Modifier::Shift), // Assuming Modifier::Shift exists
+                "alt" => modifiers_vec.push(Modifier::Alt),     // Assuming Modifier::Alt exists
+                "super" | "logo" => modifiers_vec.push(Modifier::Super), // Assuming Modifier::Super exists
+                _ => {
+                    if !part.trim().is_empty() {
+                        log::warn!("Unknown modifier string in config: {}", part.trim());
+                    }
+                } // Ignore empty parts or unknown modifiers
+            }
+        }
+        // Ensure consistent order for HashMap key equality? Or rely on KeyBind impl.
+        // Sort the vector of modifiers if the KeyBind Hash/Eq relies on order.
+        // modifiers_vec.sort_by_key(|m| format!("{:?}", m)); // Example sort
+        modifiers_vec
+    }
+
+
+    // The function to update the key binding map from loaded config
+    fn update_keybinds(&mut self) {
+        // 1. Get the base map from the hardcoded defaults
+        //    This provides the starting set of bindings.
+        let mut key_binding_map = key_binds(); // Call the existing function that returns HashMap<KeyBind, Action>
+
+        // 2. Iterate through the loaded config bindings (which are ConfigKeyBinding)
+        for config_binding in &self.config.key_bindings {
+            // 3. Convert the config format (strings) into the internal input handler format (KeyBind)
+            let key = Self::parse_key_string(&config_binding.key); // Use Self:: if it's a method on your struct
+            let modifiers_vec = Self::parse_modifier_string(&config_binding.mods); // Use Self:: if it's a method
+
+            // Check if the key or modifiers were successfully parsed before creating KeyBind
+            // If parse_key_string returns Key::Unknown, you might skip this binding.
+            if key == Key::Unidentified && !config_binding.key.is_empty() {
+                log::warn!("Skipping binding with unknown key: '{}'", config_binding.key);
+                continue; // Skip this binding if the key is unknown
+            }
+            // You might add similar checks for modifier parsing errors if needed
+
+            // Create the KeyBind struct for the HashMap key
+            let key_bind = KeyBind {
+                key,
+                modifiers: modifiers_vec, // Use the Vec<Modifier> directly
+            };
+
+            // 4. Insert into the map, allowing config bindings to override defaults
+            //    HashMap::insert replaces the value if the key already exists.
+            //    This correctly handles overriding default bindings.
+            key_binding_map.insert(key_bind, config_binding.action.clone()); // Clone action if Action isn't Copy
+        }
+        // 5. Store the resulting map in the application's state
+        self.key_binding_map = key_binding_map;
+    }
+
+
+
     fn update_config(&mut self) -> Task<Message> {
         let theme = self.config.app_theme.theme();
 
         // Update color schemes
         self.update_color_schemes();
+
 
         // Update terminal window background color
         {
@@ -506,6 +634,9 @@ impl App {
                 }
             }
         }
+
+        // Update the application's active key binding map from the loaded config
+        self.update_keybinds();
 
         // Set headerbar state
         self.core.window.show_headerbar = self.config.show_headerbar;
@@ -1215,6 +1346,34 @@ impl App {
         ])
         .into()
     }
+    
+    fn key_binds_ui(&self) -> Element<Message> {
+        let bindings_list = self.config.key_bindings.iter().map(|binding| {
+            // For each binding, create UI elements to display it
+            // This is a basic display - editing comes later
+            let key_text = Text::new(format!("Key: {}, Mods: {}", binding.key, binding.mods));
+            let action_text = Text::new(format!("Action: {:?}", binding.action)); // Debug print Action for now
+
+            Row::new()
+                .push(key_text)
+                .push(action_text)
+                .spacing(10) // Add some spacing between elements
+                .into() // Convert Row into an Element
+        }).collect::<Vec<Element<Message>>>(); // Collect all binding rows into a Vec
+
+        // Put the list of binding rows into a Column
+        let content = Column::with_children(bindings_list).spacing(10); // Add spacing between rows
+
+        // Make the content scrollable if there are many bindings
+        let scrollable_content = scrollable(content);
+
+        // Wrap in a container if needed for padding or styling
+        container(scrollable_content)
+            .padding(20) // Add padding around the content
+            .into() // Convert container into an Element<Message>
+    }
+    
+    
     fn get_default_profile(&self) -> Option<ProfileId> {
         self.config.default_profile
     }
@@ -1526,6 +1685,7 @@ impl Application for App {
             profile_expanded: None,
             show_advanced_font_settings: false,
             modifiers: Modifiers::empty(),
+            key_binding_map: HashMap::new(),
         };
 
         app.set_curr_font_weights_and_stretches();
@@ -2037,6 +2197,7 @@ impl Application for App {
                 config_set!(focus_follow_mouse, focus_follow_mouse);
             }
             Message::Key(modifiers, key) => {
+                log::debug!("Key pressed: {:?}, Modifiers: {:?}", key, modifiers);
                 for (key_bind, action) in &self.key_binds {
                     if key_bind.matches(modifiers, &key) {
                         return self.update(action.message(None));
@@ -2216,6 +2377,22 @@ impl Application for App {
                     profile.tab_title = text;
                     return self.save_profiles();
                 }
+            }
+            Message::SaveKeyBindings => {
+                log::info!("Attempting to save key bindings...");
+                if let Some(config_handler) = &self.config_handler {
+                    // Access the current state of the key_bindings from the in-memory config
+                    let key_bindings_to_save = self.config.key_bindings.clone(); // Clone to satisfy ownership/borrowing
+
+                    // Use the config_handler to set the "key_bindings" key
+                    match config_handler.set("key_bindings", key_bindings_to_save) {
+                        Ok(_) => log::info!("Key bindings saved successfully!"),
+                        Err(e) => log::error!("Failed to save key bindings: {}", e),
+                    }
+                } else {
+                    log::warn!("Cannot save key bindings: config handler not available.");
+                }
+                return self.update_focus();
             }
             Message::SelectAll(entity_opt) => {
                 if let Some(tab_model) = self.pane_model.active() {
@@ -2570,6 +2747,27 @@ impl Application for App {
             Message::UpdateDefaultProfile((default, profile_id)) => {
                 config_set!(default_profile, default.then_some(profile_id));
             }
+            Message::UpdateKeyBindingsFromUI(new_binding_list) => { // Example message
+                log::info!("Received updated key bindings from UI, saving...");
+                // Update the main config field with the new data from the UI
+                self.config.key_bindings = new_binding_list;
+
+                // Now, trigger the save for *this specific field*
+                if let Some(config_handler) = &self.config_handler {
+                    let key_bindings_to_save = self.config.key_bindings.clone(); // Clone for set
+                    match config_handler.set("key_bindings", key_bindings_to_save) { // Use the working save logic
+                        Ok(_) => log::info!("Key bindings saved successfully after UI update!"),
+                        Err(e) => log::error!("Failed to save key bindings after UI update: {}", e),
+                    }
+                } else {
+                    log::warn!("Cannot save key bindings: config handler not available.");
+                }
+
+                // After updating config, you might call update_keybinds to refresh the internal map
+                self.update_keybinds(); // Refresh the lookup map for the input handler
+
+                return self.update_focus();
+            }
             Message::WindowClose => {
                 if let Some(window_id) = self.core.main_window_id() {
                     return window::close(window_id);
@@ -2638,6 +2836,11 @@ impl Application for App {
                 Message::ToggleContextPage(ContextPage::Settings),
             )
             .title(fl!("settings")),
+            ContextPage::Keybinds => context_drawer::context_drawer(
+                self.key_binds_ui(), // Call the new function to build the key binds UI
+                Message::ToggleContextPage(ContextPage::Keybinds), // Message to close/toggle this page
+            )
+            .title(fl!("keybinds")),
         })
     }
 

@@ -30,6 +30,9 @@ remain-open = Remain open after child process exits.
 ## Settings
 settings = Settings
 
+### KeyBinds
+keybinds = Keybinds
+
 ### Appearance
 appearance = Appearance
 theme = Theme
@@ -98,3 +101,11 @@ pane-toggle-maximize = Toggle maximized
 menu-color-schemes = Color schemes...
 menu-settings = Settings...
 menu-about = About COSMIC Terminal...
+menu-keybinds = Keybinds...
+
+keybinds-page-title = Key Bindings
+# keybinds-list-subtitle = Configured Bindings (Optional: if you want a subtitle for the list)
+keybinds-no-bindings-configured = No key bindings are currently configured.
+keybinds-button-record = Record New Keys
+keybinds-status-recording = Recording... (Press Keys)
+# keybinds-button-cancel-recording = Cancel Recording (Optional: if you have a dedicated cancel button)

@@ -37,6 +37,7 @@ rust-embed = "8"
 url = "2.5"
 # TODO: required by 1.80
 home = "=0.5.9"
+xkbcommon = "0.8.0"
 
 [dependencies.cosmic-files]
 git = "https://github.com/pop-os/cosmic-files.git"

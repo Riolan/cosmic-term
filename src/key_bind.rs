@@ -2,6 +2,7 @@ use cosmic::widget::menu::key_bind::{KeyBind, Modifier};
 use cosmic::{iced::keyboard::Key, iced_core::keyboard::key::Named};
 use std::collections::HashMap;
 
+use crate::config::ConfigKeyBinding;
 use crate::Action;
 
 //TODO: load from config
@@ -80,5 +81,38 @@ pub fn key_binds() -> HashMap<KeyBind, Action> {
     // CTRL+Alt+L clears the scrollback.
     bind!([Ctrl, Alt], Key::Character("L".into()), ClearScrollback);
 
+    // Silly test...
+    bind!([Ctrl, Alt, Shift], Key::Character("S".into()), SaveKeyBindings);
+
     key_binds
 }
+
+
+pub fn build_default_key_bindings() -> Vec<ConfigKeyBinding> {
+    // Get the hardcoded bindings as a HashMap
+    let hardcoded_map = key_binds(); // Call your existing function
+
+    // Convert the HashMap into the desired Vec<ConfigKeyBinding>
+    hardcoded_map.into_iter().map(|(key_bind, action)| {
+        // Convert the KeyBind struct into the fields needed for ConfigKeyBinding
+        // This mapping depends on how you designed ConfigKeyBinding
+        let key_string = match key_bind.key {
+            Key::Character(c) => c.to_string(),
+            Key::Named(named_key) => format!("{:?}", named_key), // Convert named key enum to string
+            // Handle other Key variants if necessary
+            _ => "UnknownKey".to_string(), // Fallback for unhandled key types
+        };
+
+        let mods_string = key_bind.modifiers.into_iter()
+            .map(|m| format!("{:?}", m)) // Convert Modifier enum to string
+            .collect::<Vec<String>>()
+            .join("|"); // Join multiple modifiers with "|"
+
+        ConfigKeyBinding {
+            key: key_string,
+            mods: mods_string,
+            action,
+        }
+    }).collect() // Collect the results into a Vec
+}
+
