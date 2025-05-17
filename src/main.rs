@@ -318,15 +318,15 @@ impl Action {
                 Action::SelectAll => fl!("action-name-select-all"),
                 Action::Settings => fl!("action-name-settings"),
                 Action::ShowHeaderBar(_ /*show*/) => fl!("action-name-show-headerbar"),
-                Action::TabActivate0 => fl!("action-name-tab-activate0"),
-                Action::TabActivate1 => fl!("action-name-tab-activate1"),
-                Action::TabActivate2 => fl!("action-name-tab-activate2"),
-                Action::TabActivate3 => fl!("action-name-tab-activate3"),
-                Action::TabActivate4 => fl!("action-name-tab-activate4"),
-                Action::TabActivate5 => fl!("action-name-tab-activate5"),
-                Action::TabActivate6 => fl!("action-name-tab-activate6"),
-                Action::TabActivate7 => fl!("action-name-tab-activate7"),
-                Action::TabActivate8 => fl!("action-name-tab-activate8"),
+                Action::TabActivate0 => fl!("action-name-tab-activate1"),
+                Action::TabActivate1 => fl!("action-name-tab-activate2"),
+                Action::TabActivate2 => fl!("action-name-tab-activate3"),
+                Action::TabActivate3 => fl!("action-name-tab-activate4"),
+                Action::TabActivate4 => fl!("action-name-tab-activate5"),
+                Action::TabActivate5 => fl!("action-name-tab-activate6"),
+                Action::TabActivate6 => fl!("action-name-tab-activate7"),
+                Action::TabActivate7 => fl!("action-name-tab-activate8"),
+                Action::TabActivate8 => fl!("action-name-tab-activate9"),
                 Action::TabClose => fl!("action-name-tab-close"),
                 Action::TabNew => fl!("action-name-tab-new"),
                 Action::TabNewNoProfile => fl!("action-name-tab-new-no-profile"),
@@ -1442,7 +1442,6 @@ impl App {
 
     // Handles user presing to modify "Keybinds" (Key Binds, Keys, Chords, Mods)
     pub fn key_binds_ui(&self) -> cosmic::Element<'_, Message> {
-        // 1. Build the base page content (the scrollable list, title, etc.)
         // This is the UI that will be visible normally and will be the bottom layer.
         let title_widget = cosmic::widget::text("Keybindings Settings")
             .size(32)
@@ -1505,23 +1504,20 @@ impl App {
     desired_background_alpha: f32,  // The target alpha (0.0 to 1.0)
 ) -> cosmic::widget::container::Style {
 
-    let mut color_for_dialog_bg: cosmic::iced::Color;
-
-    // 1. Access the theme's style information for a 'background' role.
-    //    `theme.cosmic().background` seems to give you a `cosmic::cosmic_theme::Container`
-    //    style instance (or similar). We look at its `background` field.
+    // TODO: Enforce Styling these were giving interesting results need to check the values.
+    let mut _color_for_dialog_bg: cosmic::iced::Color;
     let mut themed_background_property = theme.cosmic().bg_color();
 
-    // 2. Check if this background property is a solid color.
    
     themed_background_property.alpha = desired_background_alpha;
 
-    // 3. Construct and return the full container::Style
+    // TODO: Enforce styling currently just black.
     cosmic::widget::container::Style {
-        background: Some(cosmic::iced::Background::Color(cosmic::iced::Color::from_linear_rgba(themed_background_property.red,
-            themed_background_property.blue,
-            themed_background_property.green,
-            themed_background_property.alpha
+        background: Some(cosmic::iced::Background::Color(cosmic::iced::Color::from_linear_rgba(
+            0.0,
+            0.0,
+            0.0,
+            desired_background_alpha
         ))),
         
         // Ensure text and other elements are visible against this new background.
@@ -1544,10 +1540,10 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
         return cosmic::widget::Space::new(cosmic::iced::Length::Shrink, cosmic::iced::Length::Shrink).into();
     };
     // The main dialog title will be set by `Dialog::title()`, so we don't need `title_text` here
-    // let binding_action_name = app_state.config.key_bindings[index].action.display_name();
-    // let title_text = cosmic::widget::text(format!("Recording for Action: {}", binding_action_name)).size(20);
+    let binding_action_name = app_state.config.key_bindings[index].action.display_name();
+    let title_text = cosmic::widget::text(format!("Recording for Action: {}", binding_action_name)).size(20);
 
-    // let divider = cosmic::widget::rule::horizontal(10); // You had this commented out
+    let divider = widget::divider::horizontal::light();
 
     let entered_chords_label = cosmic::widget::text("Entered Chords:");
 
@@ -1556,7 +1552,9 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
         display_parts.push(app_state.keybind_dialog_current_modifiers_text.join(" + "));
     }
     if let Some(key_text) = &app_state.keybind_dialog_current_key_text {
-        display_parts.push(key_text.clone());
+        if display_parts.len() != 0 { // Ensure we don't show actual key presses if we havent typed yet.
+            display_parts.push(key_text.clone());
+        }
     }
     let current_keys_display_str = if display_parts.is_empty() {
         if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
@@ -1592,8 +1590,8 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
 
     // This is the inner column containing all the dialog's specific UI elements
     let dialog_internal_column = cosmic::widget::column()
-        // No title_text or divider here if Dialog::title() handles the title
-        // and you don't want a divider right below it.
+        .push(title_text)
+        .push(divider)
         .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(10.0))) // Top space
         .push(entered_chords_label)
         .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(5.0)))
@@ -2453,7 +2451,7 @@ impl Application for App {
             Message::Key(modifiers, key) => {
                 // VVV
                 // Should likely invert these calls so that we are more often than not
-                if let Some(index) = self.keybind_dialog_open_for_index {
+                if let Some(_index) = self.keybind_dialog_open_for_index {
                     // Keybind recording mode
                     match key {
                         cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Enter) => {
@@ -2472,6 +2470,7 @@ impl Application for App {
                         _ => {
                             // Lock modifiers as soon as we start processing a non-special key AND we have space 
                             // used in modifiers
+                            // TODO: Refactor into guard clauses (unless this is a rust anti pattern?)
                             if self.keybind_dialog_current_modifiers_text.len() > 0 {
                                 // Only register non-modifier keys
                                 if !is_just_modifier_key(&key) {
@@ -2485,8 +2484,6 @@ impl Application for App {
                                         cosmic::iced::keyboard::Key::Unidentified => None,
                                     };
                                 }
-                            } else {
-                                log::warn!("We would of locked here originally, but now we just pass.")
                             }
                         }
                     }
@@ -3232,7 +3229,22 @@ impl Application for App {
                         self.config.key_bindings[index].mods = new_mods_str;
                         self.config.key_bindings[index].key = new_key_str;
                         log::info!("Saved binding for action: {:?}", self.config.key_bindings[index].action);
-                        // TODO: Persist config changes
+
+
+
+                        self.update_keybinds();
+                        // This does save all key_bindings (?) unless serde does something under the 
+                        // covers - but likely want to ensure this is what we want to do.
+                        if let Some(config_handler_ref) = &self.config_handler {
+                            // The `key_bindings` field is part of `self.config`.
+                            // We save the entire updated `Vec<ConfigKeyBinding>` under the "key_bindings" key.
+                            match config_handler_ref.set("key_bindings", &self.config.key_bindings) {
+                                Ok(_) => log::info!("Successfully persisted key_bindings configuration to disk."),
+                                Err(err) => log::error!("Failed to save 'key_bindings' config entry to disk: {}", err),
+                            }
+                        } else {
+                            log::warn!("Config handler not available, key_bindings change not persisted to disk.");
+                        }
                         
                         // Successfully saved, now fully close and reset dialog state
                         self.keybind_dialog_open_for_index = None; // Clear after successful save
