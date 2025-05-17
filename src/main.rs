@@ -2023,7 +2023,11 @@ impl Application for App {
             // Close context drawer if open
             log::warn!("ON ESCAPE CONTEXT FALSE");
             self.core.window.show_context = false;
+            if self.context_page == ContextPage::Keybinds {
+                self.keybind_dialog_open_for_index = None;
+            }
             self.context_page = ContextPage::NONE;
+
         } else if self.find {
             // Close find if open
             log::warn!("ON ESCAPE CONTEXT CLOSE FIND IF OPEN");
@@ -2591,10 +2595,9 @@ impl Application for App {
                         }
                     }
                 } else {
-                    // Normal keybinding processing
-                    for (key_bind_def, action) in &self.key_binds { 
-                        if key_bind_def.matches(modifiers, &key) {
-                            log::debug!("Matched runtime keybind: {:?} for action {:?}", key_bind_def, action);
+                    // Normal keybinding processing is handled
+                    for (key_bind, action) in &self.key_binds {
+                        if key_bind.matches(modifiers, &key) {
                             return self.update(action.message(None));
                         }
                     }
@@ -3302,6 +3305,7 @@ impl Application for App {
             Message::OpenKeybindDialog(index) => {
                    log::warn!("OpenKeybindDialog!!");
                 if self.keybind_dialog_open_for_index.is_none() {
+                    
                     self.keybind_dialog_current_modifiers_lock = false;
                     self.keybind_dialog_open_for_index = Some(index);
                     let binding = &self.config.key_bindings[index];
@@ -3503,6 +3507,14 @@ impl Application for App {
 
                 if self.config.focus_follow_mouse {
                     terminal_box = terminal_box.on_mouse_enter(move || Message::MouseEnter(pane));
+                }
+
+                // Notify to disable keybinds while we are trying to 
+                // record a new keybind.
+                if self.keybind_dialog_open_for_index.is_none() {
+                    terminal_box = terminal_box.modifying_key_binds(false);
+                } else {
+                    terminal_box = terminal_box.modifying_key_binds(true);
                 }
 
                 let context_menu = {

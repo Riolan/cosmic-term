@@ -62,6 +62,7 @@ pub struct TerminalBox<'a, Message> {
     on_window_focused: Option<Box<dyn Fn() -> Message + 'a>>,
     on_window_unfocused: Option<Box<dyn Fn() -> Message + 'a>>,
     key_binds: HashMap<KeyBind, Action>,
+    modifying_key_binds: bool,
 }
 
 impl<'a, Message> TerminalBox<'a, Message>
@@ -83,6 +84,7 @@ where
             mouse_inside_boundary: None,
             on_middle_click: None,
             key_binds: key_binds(),
+            modifying_key_binds: false,
             on_open_hyperlink: None,
             on_window_focused: None,
             on_window_unfocused: None,
@@ -124,6 +126,11 @@ where
         on_context_menu: impl Fn(Option<Point>) -> Message + 'a,
     ) -> Self {
         self.on_context_menu = Some(Box::new(on_context_menu));
+        self
+    }
+
+    pub fn modifying_key_binds(mut self, modifying_key_binds: bool) -> Self {
+        self.modifying_key_binds = modifying_key_binds;
         self
     }
 
@@ -752,9 +759,13 @@ where
                 text,
                 ..
             }) if state.is_focused && named == modified_named => {
-                for key_bind in self.key_binds.keys() {
-                    if key_bind.matches(modifiers, &Key::Named(named)) {
-                        return Status::Captured;
+                // If not modifying keybinds then match the keybind.
+                // this may be redundant - depends which are captured here...
+                if self.modifying_key_binds {
+                    for key_bind in self.key_binds.keys() {
+                        if key_bind.matches(modifiers, &Key::Named(named)) {
+                            return Status::Captured;
+                        }
                     }
                 }
 
@@ -902,9 +913,13 @@ where
                 key,
                 ..
             }) if state.is_focused => {
-                for key_bind in self.key_binds.keys() {
-                    if key_bind.matches(modifiers, &key) {
-                        return Status::Captured;
+                // If not modifying keybinds then match the keybind 
+                // this may be redundant - depends which are captured here...
+                if !self.modifying_key_binds{
+                    for key_bind in self.key_binds.keys() {
+                        if key_bind.matches(modifiers, &key) {
+                            return Status::Captured;
+                        }
                     }
                 }
                 let character = text.and_then(|c| c.chars().next()).unwrap_or_default();
