@@ -199,6 +199,63 @@ pub struct ConfigKeyBinding {
     pub action: Action, // This uses your Action enum from earlier
 }
 
+
+impl ConfigKeyBinding {
+    fn key_enum_to_string(key_enum_val: &cosmic::iced::keyboard::Key) -> String {
+        match key_enum_val {
+            cosmic::iced::keyboard::Key::Character(c) => c.to_string(), // Assuming c is SmolStr or similar that implements ToString
+            cosmic::iced::keyboard::Key::Named(named_key) => format!("{:?}", named_key), // Using Debug representation
+            cosmic::iced::keyboard::Key::Unidentified => todo!(),
+        }
+    }
+
+    fn modifiers_vec_to_string(modifiers_vec: &[cosmic::widget::menu::key_bind::Modifier]) -> String {
+        if modifiers_vec.is_empty() {
+            String::new()
+        } else {
+            modifiers_vec.iter()
+                .map(|m| format!("{:?}", m)) // Using Debug representation (e.g., "Ctrl", "Alt")
+                .collect::<Vec<String>>()
+                .join("|")
+        }
+    }
+
+    pub fn default_for_action(target_action: &Action) -> Self {
+        let default_bindings_map = crate::key_bind::key_binds(); // Your function returning HashMap<KeyBind, Action>
+
+        // Find the KeyBind associated with the target_action.
+        // We iterate because the HashMap is KeyBind -> Action, we need to find by Action.
+        let found_key_bind: Option<&cosmic::widget::menu::KeyBind> = default_bindings_map
+            .iter()
+            .find(|(_map_key_bind, map_action)| *map_action == target_action)
+            .map(|(map_key_bind, _map_action)| map_key_bind); // Extract the KeyBind if found
+
+        if let Some(key_bind_ref) = found_key_bind {
+            // Convert the found KeyBind to ConfigKeyBinding string formats
+            let key_string = Self::key_enum_to_string(&key_bind_ref.key);
+            let mods_string = Self::modifiers_vec_to_string(&key_bind_ref.modifiers);
+
+            ConfigKeyBinding {
+                action: target_action.clone(),
+                mods: mods_string,
+                key: key_string,
+            }
+        } else {
+            // If the action has no hardcoded default in key_binds()
+            log::warn!(
+                "No hardcoded default keybinding found for action: {:?}. Returning an empty/unbound ConfigKeyBinding.",
+                target_action
+            );
+            ConfigKeyBinding {
+                action: target_action.clone(),
+                mods: String::new(), // No modifiers
+                key: String::new(),  // No key
+            }
+        }
+    }
+}
+
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct ProfileId(pub u64);
