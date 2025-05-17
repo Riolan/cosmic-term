@@ -3228,15 +3228,16 @@ impl Application for App {
                     
                 }
             }
-            Message::CloseKeybindDialogAndSave => {
+            Message::CloseKeybindDialogAndSave => 'block: {
                 if let Some(index) = self.keybind_dialog_open_for_index { // Check before .take() for validation
                     if self.keybind_dialog_current_key_text.is_some() && 
                     !self.keybind_dialog_current_modifiers_text.is_empty() {
                         self.keybind_dialog_current_modifiers_lock = false;
 
                         // CAN NOT START WITH SHIFT TOO MANY UNINTENDED BEHAVIOR
-                        if (self.keybind_dialog_current_modifiers_text[0] == "SHIFT") {
-                            log::warn!("Save failed: Keybinding for {:?} requires at least one modifier and a non-modifier key.", self.config.key_bindings[index].action);
+                        if self.keybind_dialog_current_modifiers_text[0].to_ascii_uppercase() == "SHIFT" {
+                            log::warn!("Save failed: Keybinding for you cannot begin a Keybind with modifier of \'SHIFT\'.");
+                            break 'block;
                         }
 
 
@@ -3268,7 +3269,7 @@ impl Application for App {
                         self.keybind_dialog_current_modifiers_text.clear();
                         self.keybind_dialog_current_key_text = None;
                     } else {
-                        log::warn!("Save failed: Keybinding for you cannot begin a Keybind with modifier of \'SHIFT\'.");
+                        log::warn!("Save failed: Keybinding for {:?} requires at least one modifier and a non-modifier key.", self.config.key_bindings[index].action);
                         // Dialog remains open because self.keybind_dialog_open_for_index was not .take()n or set to None
                     }
                 }
