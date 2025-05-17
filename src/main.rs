@@ -442,11 +442,11 @@ pub enum Message {
 
     /// User clicked "Record New Keys" for the binding at this `usize` index
     /// in `self.config.key_binds`.
-    StartRecordingKeyBinding(usize),
+    //StartRecordingKeyBinding(usize),
 
     /// User clicked "Recording" button or pressed Escape to cancel recording
     /// for the binding at the given `usize` index.
-    CancelRecordingKeyBinding(usize),
+   // CancelRecordingKeyBinding(usize),
 
     /// Internal message when a key combination is captured by the global event handler
     /// during recording mode.
@@ -1589,7 +1589,7 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
         .class(style::Button::Suggested)
         .on_press(Message::KeybindDialogSetToDefault);
 
-    let hint_text = cosmic::widget::text("Press keys. Enter to Save | Esc to Cancel.")
+    let hint_text = cosmic::widget::text("Press keys. Enter to Save | Backspace to Cancel.")
         .size(14);
 
     let buttons_row = cosmic::widget::row()
@@ -2474,7 +2474,7 @@ impl Application for App {
                                 // Consider showing an error message to the user
                             }
                         }
-                        cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Escape) => {
+                        cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Backspace) => {
                             return self.update(Message::CloseKeybindDialogNoSave);
                         }
                         _ => {
@@ -3118,19 +3118,6 @@ impl Application for App {
                 ));
             }
 
-            Message::StartRecordingKeyBinding(binding_index) => {
-                log::info!("Starting key recording for binding index: {}", binding_index);
-                self.currently_recording_binding_index = Some(binding_index);
-                // No specific command needed here, UI will update due to state change.
-            }
-
-            Message::CancelRecordingKeyBinding(binding_index) => {
-                log::info!("Cancelling key recording for binding index: {}", binding_index);
-                // Only cancel if we were actually recording for this index, or generally.
-                if self.currently_recording_binding_index == Some(binding_index) || self.currently_recording_binding_index.is_some() {
-                    self.currently_recording_binding_index = None;
-                }
-            }
 
             Message::ProcessCapturedKeyCombination { binding_index, key_code, key_modifiers } => {
                 log::info!("Processing captured keys for binding index: {}", binding_index);
