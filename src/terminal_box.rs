@@ -1066,6 +1066,7 @@ where
                         }
                         // Update context menu state
                         if let Some(on_context_menu) = &self.on_context_menu {
+                            log::warn!(" >>> Update context menu state");
                             shell.publish((on_context_menu)(match self.context_menu {
                                 Some(_) => None,
                                 None => match button {

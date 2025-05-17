@@ -462,13 +462,16 @@ pub enum Message {
     // Keybinding Dialog Messages
     OpenKeybindDialog(usize),      // User clicked the "modify" icon for a binding
     CloseKeybindDialogAndSave,     // User confirmed dialog (e.g., pressed Enter or a Save button)
-    CloseKeybindDialogNoSave,    // User cancelled dialog (e.g., pressed Esc or a Cancel button)    
+    CloseKeybindDialogNoSave,      // User cancelled dialog (e.g., pressed Esc or a Cancel button)    
     KeybindDialogClearKeys,        // "Clear" button in dialog pressed
     KeybindDialogSetToDefault,     // "Default" button in dialog pressed
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContextPage {
+    NONE, // Used to display no Context Pages in situations
+          // where a context does exist 
+          // but no context is to be shown in drawer.
     About,
     ColorSchemes(ColorSchemeKind),
     Profiles,
@@ -795,11 +798,41 @@ impl App {
     }
 
     fn update_focus(&self) -> Task<Message> {
+
+        // TOOD: Ensure this is what would be expected
+        // How this logic is currently we don't allow for 
+        // both find and a context drawer to be active
+        // since self.find is checked first it will default to it.
+
+        // TODO: For now I'm making the assumption
+        // that if a user opens up up find then that means 
+        // they no longer want the context page open?
+        // assuming that find doesn't work inside of a context drawer
+        // someone should check me on this and notifiy what the intended
+        // functionality should look like.
+
         if self.find {
+            // The assumption that find only applies to terminal
+            // to search context drawers will require modification to logic
+            // of how I have modified updates to context.
+            // additionally - context can change if context drawer is brought out after
+            // so need to account for that
+            log::warn!("<>< Updating Context Page from find!");
+            Message::ToggleContextPage(ContextPage::NONE); // close context drawer
+
             widget::text_input::focus(self.find_search_id.clone())
-        } else if let Some(terminal_id) = self.terminal_ids.get(&self.pane_model.focused()).cloned()
-        {
-            widget::text_input::focus(terminal_id)
+        } else if let Some(terminal_id) = self.terminal_ids.get(&self.pane_model.focused()).cloned() {
+            self::warn!("UPDATED TO FOCUS!");
+            // SHOULD CHECK TO ENSURE THAT CONTEXT IS NOT SET
+            // TODO: Verify if this is intended but note how it previously
+            // performed would steal focus if window was changed i.e. enlarged and
+            // would no longer be able to properly use the Context drawers/page.
+            if self.context_page != ContextPage::NONE {
+                self::warn!("Don't allow focus to change to terminal if we context drawer out!");
+                Task::none()
+            } else  {
+                widget::text_input::focus(terminal_id)
+            }
         } else {
             Task::none()
         }
@@ -1486,26 +1519,53 @@ impl App {
             .spacing(10).width(cosmic::iced::Length::Shrink).height(cosmic::iced::Length::Shrink)
             .align_x(cosmic::iced::Alignment::Center);
         
-        let base_page_element: cosmic::Element<'_, Message> = cosmic::widget::container(base_ui_column)
+        /*let base_page_element: cosmic::Element<'_, Message> = cosmic::widget::container(base_ui_column)
             .width(cosmic::iced::Length::Shrink) 
             .height(cosmic::iced::Length::Shrink)
             .padding(20)
             .align_x(cosmic::iced::Alignment::Center)
             .align_y(cosmic::iced::Alignment::Center)
-            .into();
+            .into();*/
 
-        let mut popover_view = cosmic::widget::popover(base_page_element) // Pass the underlay
-            .modal(true);  // Ensure that all text is contained.
+        
+        if self.keybind_dialog_open_for_index.is_some() {
+            // If the dialog should be open, construct and return the dialog view.
+            // This dialog element will be the entire output for this branch.
+            // Its appearance (e.g., centered, fixed width) is determined by its own
+            // `impl From<Dialog> for Element` and the styles applied there.
+            let keybind_dialog_content = Self::build_keybind_dialog_content(self);
 
-        if self.keybind_dialog_open_for_index.is_some()  {
-            let dialog_inner_content = Self::build_keybind_dialog_content(self);
-            popover_view = popover_view.popup(dialog_inner_content);
+            let keybind_dialog_element = cosmic::widget::Dialog::new() // Use the path to your Dialog struct
+                .title("Keybind Configuration")
+                //.icon(/*cosmic::widget::icon(cosmic::icon::Id::Keyboard).size(24)*/) // Example, if your dialog supports an icon
+                .control(keybind_dialog_content) // Add the column of controls
+                /* .primary_action(
+                    cosmic::widget::button("Save Changes")
+                        .on_press(Message::SaveKeybindConfiguration),
+                )
+                .secondary_action(
+                    cosmic::widget::button("Cancel")
+                        .on_press(Message::CloseKeybindDialog), // This message should set keybind_dialog_open_for_index to None
+                )*/;
+                    
+            // return keybind_dialog_element; // If this is the main view function
+            keybind_dialog_element.into() // If this is part of a larger expression, this is what this block evaluates to
+                
+        } else {
+            // If the dialog is not open, construct and return the base page element.
+            // `base_ui_column` should be defined here. For example:
+            // let base_ui_column = self.build_main_content_column();
+            let base_page_element: cosmic::Element<'_, Message> = cosmic::widget::container(base_ui_column)
+                .width(cosmic::iced::Length::Shrink)
+                .height(cosmic::iced::Length::Shrink)
+                .padding(20)
+                .align_x(cosmic::iced::Alignment::Center)
+                .align_y(cosmic::iced::Alignment::Center)
+                .into();
+
+            // return base_page_element; // If this is the main view function
+            base_page_element // If this is part of a larger expression, this is what this block evaluates to
         }
-        // If get_keybind_dialog_element_for_popover() returns None, .popup() is not called,
-        // and the popover simply shows its underlay without any overlay.
-
-        popover_view.into() // Return the Popover element
-
 
     }
 
@@ -1926,7 +1986,7 @@ impl Application for App {
             theme_names_dark: Vec::new(),
             theme_names_light: Vec::new(),
             themes: HashMap::new(),
-            context_page: ContextPage::Settings,
+            context_page: ContextPage::NONE,
             dialog_opt: None,
             terminal_ids,
             find: false,
@@ -1958,11 +2018,23 @@ impl Application for App {
 
     //TODO: currently the first escape unfocuses, and the second calls this function
     fn on_escape(&mut self) -> Task<Message> {
+        log::warn!("ON ESCAPE CONTEXT");
         if self.core.window.show_context {
             // Close context drawer if open
+            log::warn!("ON ESCAPE CONTEXT FALSE");
             self.core.window.show_context = false;
+            self.context_page = ContextPage::NONE;
         } else if self.find {
             // Close find if open
+            log::warn!("ON ESCAPE CONTEXT CLOSE FIND IF OPEN");
+
+            // To remove artifacts close context is find is opened.
+            // Otherwise the context doesn't allowed for it to be shared.
+
+            self.core.window.show_context = false;
+            self.context_page = ContextPage::NONE;
+
+
             self.find = false;
             self.find_search_value.clear();
         }
@@ -1972,16 +2044,27 @@ impl Application for App {
     }
 
     fn on_context_drawer(&mut self) -> Task<Message> {
+        log::warn!("ON CONTEXT DRAWER");
         if self.core.window.show_context {
+            self.context_page = ContextPage::NONE;
+            self.context_drawer();
+            log::warn!("ON CONTEXT DRAWER: NONE");
             Task::none()
         } else {
+            log::warn!("ON CONTEXT DRAWER: UPDATE FOCUS");
+               self.context_page = ContextPage::NONE;
+            self.context_drawer();
             self.update_focus()
         }
     }
 
     /// Handle application events here.
+    /// It seems that window movements or similar affects will call
+    /// a messasge with update. So, we should likely attempt to verify context informaition
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         // Helper for updating config values efficiently
+        log::warn!(" >>> Current context page is: {:#?}", self.context_page);
+
         macro_rules! config_set {
             ($name: ident, $value: expr) => {
                 match &self.config_handler {
@@ -2393,6 +2476,16 @@ impl Application for App {
             }
             Message::Drop(None) => {}
             Message::Find(find) => {
+                
+                
+                // TODO: Verify if this is intended behavior
+                // but if Context Draw is open then do not open find.
+                // This is based on an assumption of predicted behaviour
+                if self.core.window.show_context {
+                    return self.update_focus();
+                }
+
+
                 self.find = find;
                 if find {
                     if let Some(tab_model) = self.pane_model.active() {
@@ -3023,6 +3116,8 @@ impl Application for App {
                 return self.update(Message::TabNew);
             }
             Message::ToggleContextPage(context_page) => {
+
+                log::warn!("Toggle Context page called");
                 if self.context_page == context_page {
                     self.core.window.show_context = !self.core.window.show_context;
                 } else {
@@ -3096,10 +3191,14 @@ impl Application for App {
                 }
             },
             Message::WindowFocused => {
+                log::warn!("WindowFocusedpage called");
+
                 self.pane_model.update_terminal_focus();
                 return self.update_focus();
             }
             Message::WindowUnfocused => {
+                log::warn!("WindowUnfocused page called");
+
                 self.pane_model.unfocus_all_terminals();
             }
             Message::ZoomIn => {
@@ -3296,6 +3395,15 @@ impl Application for App {
             return None;
         }
 
+        // TODO: Verify this would be expected behaviour
+        // This is based on an assumption
+        // Ensure that context drawer can't come out if find is already out
+        // Also need to do the other way ensure that find can't come out
+        // if context drawer is already out
+        if self.find {
+            return None;
+        }
+
         Some(match self.context_page {
             ContextPage::About => context_drawer::context_drawer(
                 self.about(),
@@ -3321,6 +3429,12 @@ impl Application for App {
                 Message::ToggleContextPage(ContextPage::Keybinds), // Message to close/toggle this page
             )
             .title(fl!("keybinds")),
+            ContextPage::NONE => {
+                // To ensure that no context drawer is actually set  or shown.
+                //pub fn set_show_context(&mut self, show: bool) {
+                //self.core::set_show_context(false);
+                return None;
+            }
         })
     }
 
