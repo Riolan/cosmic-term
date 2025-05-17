@@ -1440,7 +1440,7 @@ impl App {
     }
     
 
-    // Handles user presing to modify "Keybinds" (Key Binds, Keys, Chords, Mods)
+    // Handles user presing to modify "Keybinds" (Key Binds, Keys, Mods)
     pub fn key_binds_ui(&self) -> cosmic::Element<'_, Message> {
         // This is the UI that will be visible normally and will be the bottom layer.
         let title_widget = cosmic::widget::text("Keybindings Settings")
@@ -1555,7 +1555,7 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
 
     let divider = widget::divider::horizontal::light();
 
-    let entered_chords_label = cosmic::widget::text("Entered Chords:");
+    let entered_keys_label = cosmic::widget::text("Entered Keys:");
 
     let mut display_parts: Vec<String> = Vec::new();
     if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
@@ -1603,7 +1603,7 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
         .push(title_text)
         .push(divider)
         .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(10.0))) // Top space
-        .push(entered_chords_label)
+        .push(entered_keys_label)
         .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(5.0)))
         .push(current_keys_text)
         .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(20.0)))
