@@ -1451,6 +1451,16 @@ impl App {
             .padding([0, 0, 20, 0])
             .align_x(cosmic::iced::Alignment::Center);
 
+        /*
+         * TODO: 
+         * ADD A NOTE TO USERS EXPLAINING THAT KEYS CAN HAVE MULTIPLE MEANINGS AND TO BE SURE THEY
+         * ARE CERTAIN THAT THE KEY DOES NOT ALREADY HAVE A FUNCTION AND THAT THEY RECOGNIZE THAT THE THEY PLACED
+         * REPRESENTATION MAY NOT BE PRECISELY WHAT THE EXPECT.
+         * 
+         * SHORT READ ME ABOUT [SHIFT] + [EQUAL] GIVING OUTPUT OF [PLUS].
+         * 
+         */
+
         let mut elements_for_column: Vec<cosmic::Element<'_, Message>> = Vec::new();
         if self.config.key_bindings.is_empty() {
             let placeholder = cosmic::widget::container(cosmic::widget::text("No keybindings configured.")
@@ -3223,6 +3233,13 @@ impl Application for App {
                     if self.keybind_dialog_current_key_text.is_some() && 
                     !self.keybind_dialog_current_modifiers_text.is_empty() {
                         self.keybind_dialog_current_modifiers_lock = false;
+
+                        // CAN NOT START WITH SHIFT TOO MANY UNINTENDED BEHAVIOR
+                        if (self.keybind_dialog_current_modifiers_text[0] == "SHIFT") {
+                            log::warn!("Save failed: Keybinding for {:?} requires at least one modifier and a non-modifier key.", self.config.key_bindings[index].action);
+                        }
+
+
                         let new_mods_str = self.keybind_dialog_current_modifiers_text.join("|");
                         let new_key_str = self.keybind_dialog_current_key_text.as_ref().unwrap().clone(); // Safe due to check
 
@@ -3251,7 +3268,7 @@ impl Application for App {
                         self.keybind_dialog_current_modifiers_text.clear();
                         self.keybind_dialog_current_key_text = None;
                     } else {
-                        log::warn!("Save failed: Keybinding for {:?} requires at least one modifier and a non-modifier key.", self.config.key_bindings[index].action);
+                        log::warn!("Save failed: Keybinding for you cannot begin a Keybind with modifier of \'SHIFT\'.");
                         // Dialog remains open because self.keybind_dialog_open_for_index was not .take()n or set to None
                     }
                 }

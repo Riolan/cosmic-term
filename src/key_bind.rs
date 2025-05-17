@@ -65,8 +65,34 @@ pub fn key_binds() -> HashMap<KeyBind, Action> {
     // Ctrl+0, Ctrl+-, and Ctrl+= are not special keys for terminals and are free to use
     bind!([Ctrl], Key::Character("0".into()), ZoomReset);
     bind!([Ctrl], Key::Character("-".into()), ZoomOut);
-    bind!([Ctrl], Key::Character("=".into()), ZoomIn);
-    bind!([Ctrl], Key::Character("+".into()), ZoomIn);
+
+
+
+    // Adding this Gemini summary to in hope of clarification due to how this might be tricky to wrap
+    // head around.
+
+
+    // This macro binds a combination of explicit modifiers (like Ctrl, Shift) and a specific
+    // resulting character (e.g., Key::Character("+")) to an action.
+    //
+    // How it handles "Shift + =" producing "+":
+    // The macro itself doesn't interpret physical key states to characters. It relies on
+    // the input event system to determine:
+    // 1. The set of active modifiers (e.g., `[Ctrl, Shift]`).
+    // 2. The character produced by the key press considering modifiers (e.g., `+` if `Shift + =` was pressed).
+    //
+    // So, to bind `Ctrl + Shift + (the physical key for '=')` when it results in `+`,
+    // you would define the binding as: `bind!([Ctrl, Shift], Key::Character("+".into()), YourAction);`
+    // The input system must then report `Ctrl`+`Shift` as modifiers and `+` as the character
+    // for this binding to be matched.
+
+
+    // TODO: Verify this is what the individual intended i.e. [Ctrl] + [+] which really
+    // evaluates as seen below. 
+    // This seems like accidental: bind!([Ctrl], Key::Character("=".into()), ZoomIn);
+    // This likely the intent of what the above was attempting as for most
+    // Keyboards you CANNOT press [+] without first pressing [Shift] + [=] => [+]
+    bind!([Ctrl, Shift], Key::Character("=".into()), ZoomIn);
 
     // Ctrl+Arrows and Ctrl+HJKL move between splits
     bind!([Ctrl, Shift], Key::Named(Named::ArrowLeft), PaneFocusLeft);
