@@ -4,8 +4,8 @@
 use alacritty_terminal::tty::Options;
 use alacritty_terminal::{event::Event as TermEvent, term, term::color::Colors as TermColors, tty};
 use cosmic::iced::clipboard::dnd::DndAction;
+use cosmic::iced::clipboard::read;
 use cosmic::iced::Radius;
-use cosmic::widget::canvas::path::lyon_path::geom::size;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::menu::key_bind::{KeyBind, Modifier};
 use cosmic::widget::settings::item;
@@ -41,6 +41,7 @@ use cosmic::{surface, Apply};
 use cosmic_files::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
 use cosmic_text::{fontdb::FaceInfo, Family, Stretch, Weight};
 use localize::LANGUAGE_SORTER;
+use log::warn;
 use palette::IntoColor;
 use std::{
     any::TypeId,
@@ -461,10 +462,7 @@ pub enum Message {
     // Keybinding Dialog Messages
     OpenKeybindDialog(usize),      // User clicked the "modify" icon for a binding
     CloseKeybindDialogAndSave,     // User confirmed dialog (e.g., pressed Enter or a Save button)
-    CloseKeybindDialogNoSave,    // User cancelled dialog (e.g., pressed Esc or a Cancel button)
-    
-    KeybindDialogUpdate(cosmic::iced::keyboard::Event), // Raw keyboard event while dialog is open
-    
+    CloseKeybindDialogNoSave,    // User cancelled dialog (e.g., pressed Esc or a Cancel button)    
     KeybindDialogClearKeys,        // "Clear" button in dialog pressed
     KeybindDialogSetToDefault,     // "Default" button in dialog pressed
 }
@@ -1490,29 +1488,10 @@ impl App {
             .into();
 
         let mut popover_view = cosmic::widget::popover(base_page_element) // Pass the underlay
-            .modal(true); 
+            .modal(false); 
 
-        
-
-
-
-        /*if self.keybind_dialog_open_for_index.is_some() {
-            let dialog_inner_content = Self::build_keybind_dialog_content(self);
-
-            let mut x = Popover(dialog_inner_content);
-
-            return dialog_element.into(); // Or just dialog_element
-        }*/
-
-        // 3. If a dialog should be shown (based on app state), set its content on the popover
         if self.keybind_dialog_open_for_index.is_some()  {
-            // The `.map(crate::Action::App)` from the example suggests that if your App::Message
-            // is an enum that wraps messages from different parts of the app (like a sub-module's message),
-            // you might need to map the dialog's messages.
-            // If your dialog_element_to_show already produces App::Message directly, no map is needed.
-            // For now, assuming direct App::Message:
             let dialog_inner_content = Self::build_keybind_dialog_content(self);
-            
             popover_view = popover_view.popup(dialog_inner_content);
         }
         // If get_keybind_dialog_element_for_popover() returns None, .popup() is not called,
@@ -1574,15 +1553,24 @@ fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, M
 
     let entered_chords_label = cosmic::widget::text("Entered Chords:");
 
-    let mut current_keys_display_parts: Vec<String> = app_state.keybind_dialog_current_modifiers_text.clone();
-    if let Some(key) = &app_state.keybind_dialog_current_key_text {
-        current_keys_display_parts.push(key.clone());
+    let mut display_parts: Vec<String> = Vec::new();
+    if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
+        display_parts.push(app_state.keybind_dialog_current_modifiers_text.join(" + "));
     }
-    let current_keys_display_str = if current_keys_display_parts.is_empty() {
-        "<Press keys to record>".to_string()
+    if let Some(key_text) = &app_state.keybind_dialog_current_key_text {
+        display_parts.push(key_text.clone());
+    }
+    let current_keys_display_str = if display_parts.is_empty() {
+        if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
+            // Only modifiers are active, waiting for a key
+            format!("{} + <Key>", app_state.keybind_dialog_current_modifiers_text.join(" + "))
+        } else {
+            "<Press key combination>".to_string()
+        }
     } else {
-        current_keys_display_parts.join(" + ")
+        display_parts.join(" + ")
     };
+
     let current_keys_text = cosmic::widget::text(current_keys_display_str)
         .size(24)
         .height(cosmic::iced::Length::Fixed(40.0));
@@ -2465,41 +2453,59 @@ impl Application for App {
                 config_set!(focus_follow_mouse, focus_follow_mouse);
             }
             Message::Key(modifiers, key) => {
+                // VVV
                 // Should likely invert these calls so that we are more often than not
                 // hitting the more likely aspect.
                  if self.keybind_dialog_open_for_index.is_some() {
+                    // This is the modifer key which is prior to the next key press
+                    // i.e. if ALT + CTRL, then ALT is a modifier to CTRL.
+                    // i.e. if CTRL + T, CTRL is a modifier to T.
+                    // i.e. if SHIFT + N, SHIFT is a modifer to N.
+                    self.keybind_dialog_current_modifiers_text = modifiers_to_strings(modifiers); 
+                    // So, what is coming in is a modifier (first pressed),
+                    // then the actual key.
+                    // Key can also be another modifier i.e. Ctrl (modifier) + Shift (key).
+
                     match key {
-                        cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Enter) => {
-                            // User pressed Enter in dialog, trigger save
-                            // Propagate to CloseKeybindDialogAndSave for cleaner state reset
-                            return self.update(Message::CloseKeybindDialogAndSave);
-                        }
-                        cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Escape) => {
-                            // User pressed Escape (Modal's on_esc should also send CloseKeybindDialogNoSave)
-                            return self.update(Message::CloseKeybindDialogNoSave);
-                        }
-                        _ => { // Any other key pressed
-                            if !is_just_modifier_key(&key) {
-                                self.keybind_dialog_current_key_text = match key {
-                                    cosmic::iced::keyboard::Key::Named(nk) => named_key_to_string(nk),
-                                    cosmic::iced::keyboard::Key::Character(s) => {
-                                        if s.chars().any(char::is_control) || s.is_empty() { None }
-                                        else { Some(s.to_uppercase()) }
-                                    }
-                                    cosmic::iced::keyboard::Key::Unidentified => None,
-                                };
+                            cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Enter) => {
+                                // Validation for saving:
+                                if self.keybind_dialog_current_key_text.is_some() && 
+                                   !self.keybind_dialog_current_modifiers_text.is_empty() {
+                                    return self.update(Message::CloseKeybindDialogAndSave);
+                                } else {
+                                    log::warn!("Invalid keybinding: Must include at least one modifier and a non-modifier key to save.");
+                                    // Consider setting an error message in App state to display in the dialog
+                                }
                             }
-                            // If it was just a modifier, current_key_text is not changed here.
-                            // Modifiers themselves were updated above.
-                        }
-                    }
-                    
+                            cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Escape) => {
+                                return self.update(Message::CloseKeybindDialogNoSave);
+                            }
+                            _ => { // Any other key pressed
+                                log::warn!("Key was NOT ESC OR ENTER.");
+                                if !is_just_modifier_key(&key) {
+                                    log::warn!("KEY WAS NOT JUST A MODIFER KEY");
+
+                                    self.keybind_dialog_current_key_text = match key {
+                                        cosmic::iced::keyboard::Key::Named(nk) => named_key_to_string(nk),
+                                        cosmic::iced::keyboard::Key::Character(s) => {
+                                            if s.chars().any(char::is_control) || s.is_empty() { None }
+                                            else { Some(s.to_uppercase()) }
+                                        }
+                                        cosmic::iced::keyboard::Key::Unidentified => None,
+                                    };
+                                } else {
+                                    log::warn!("KEY WAS JUST A MODIFER KEY");
+                                    // If we are in here than neither ESC, ENTER, or A NON MODIFIER KEY
+                                    // was pressed
+
+
+
+                                }
+                            }
+                    }                    
                 } else {
                     // --- Not in recording mode, process key press as a normal application shortcut ---
-                    // Your existing logic for handling Message::Key for shortcuts:
-                    // This likely involves looking up `self.key_binding_map.get(&KeyBind{...})`
-                    // (or self.key_binds) and then dispatching the corresponding Action's message.
-                    // Example:
+                 
                     for (key_bind_def, action) in &self.key_binds { // Use the runtime map
                         if key_bind_def.matches(modifiers, &key) {
                             log::debug!("Matched runtime keybind: {:?} for action {:?}", key_bind_def, action);
@@ -2507,7 +2513,6 @@ impl Application for App {
                         }
                     }
                     // If no shortcut matches, the key might be for terminal input.
-                    // Your existing logic should handle this (e.g., sending to active terminal).
                 }
             }
             Message::LaunchUrl(url) => {
@@ -3211,35 +3216,38 @@ impl Application for App {
             Message::OpenKeybindDialog(index) => {
                    log::warn!("OpenKeybindDialog!!");
                 if self.keybind_dialog_open_for_index.is_none() {
-                    log::warn!("IS NONE");
                     self.keybind_dialog_open_for_index = Some(index);
                     let binding = &self.config.key_bindings[index];
-                    // Initialize dialog state from current binding
+                    
+                    // Initialize dialog display from the current binding being edited
                     self.keybind_dialog_current_modifiers_text = binding.mods.split('|')
                         .filter(|s| !s.is_empty()).map(String::from).collect();
-                    self.keybind_dialog_current_modifiers_text.sort();
+                    //self.keybind_dialog_current_modifiers_text.sort(); // Consistent order
                     self.keybind_dialog_current_key_text = if binding.key.is_empty() { None } else { Some(binding.key.clone()) };
-                    self.keybind_dialog_live_modifiers = cosmic::iced::keyboard::Modifiers::empty(); // Reset live modifiers
+                    
+                    self.keybind_dialog_live_modifiers = cosmic::iced::keyboard::Modifiers::empty(); // Reset live tracking
                 }
             }
             Message::CloseKeybindDialogAndSave => {
-                if let Some(index) = self.keybind_dialog_open_for_index.take() { // .take() resets the Option
-                    let new_mods_str = self.keybind_dialog_current_modifiers_text.join("|");
-                    let new_key_str = self.keybind_dialog_current_key_text.clone().unwrap_or_default();
+                if let Some(index) = self.keybind_dialog_open_for_index { // Check before .take() for validation
+                    if self.keybind_dialog_current_key_text.is_some() && 
+                    !self.keybind_dialog_current_modifiers_text.is_empty() {
+                        
+                        let new_mods_str = self.keybind_dialog_current_modifiers_text.join("|");
+                        let new_key_str = self.keybind_dialog_current_key_text.as_ref().unwrap().clone(); // Safe due to check
 
-                    if new_mods_str.is_empty() && new_key_str.is_empty() {
-                        // Optionally show user error: "Cannot save empty binding"
-                        println!("Attempted to save an empty binding. Reverting dialog state without saving.");
-                         // To prevent saving an empty binding, we effectively treat it as a cancel here.
+                        self.config.key_bindings[index].mods = new_mods_str;
+                        self.config.key_bindings[index].key = new_key_str;
+                        log::info!("Saved binding for action: {:?}", self.config.key_bindings[index].action);
+                        // TODO: Persist config changes
+                        
+                        // Successfully saved, now fully close and reset dialog state
+                        self.keybind_dialog_open_for_index = None; // Clear after successful save
                         self.keybind_dialog_current_modifiers_text.clear();
                         self.keybind_dialog_current_key_text = None;
                     } else {
-                        self.config.key_bindings[index].mods = new_mods_str;
-                        self.config.key_bindings[index].key = new_key_str;
-                        println!("Saved binding for action: {:?}", self.config.key_bindings[index].action);
-                        // TODO: Persist config changes to disk
-                        self.keybind_dialog_current_modifiers_text.clear();
-                        self.keybind_dialog_current_key_text = None;
+                        log::warn!("Save failed: Keybinding for {:?} requires at least one modifier and a non-modifier key.", self.config.key_bindings[index].action);
+                        // Dialog remains open because self.keybind_dialog_open_for_index was not .take()n or set to None
                     }
                 }
             }
@@ -3247,64 +3255,6 @@ impl Application for App {
                 self.keybind_dialog_open_for_index = None;
                 self.keybind_dialog_current_modifiers_text.clear();
                 self.keybind_dialog_current_key_text = None;
-            }
-            Message::KeybindDialogUpdate(keyboard_event) => {
-                if self.keybind_dialog_open_for_index.is_some() {
-                    match keyboard_event {
-                        cosmic::iced::keyboard::Event::KeyPressed { key, modifiers, .. } => {
-                            self.keybind_dialog_live_modifiers = modifiers; // Update live modifiers
-                            self.keybind_dialog_current_modifiers_text = modifiers_to_strings(modifiers);
-
-                            match key {
-                                cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Enter) => {
-                                    // User pressed Enter, trigger save
-                                    return self.update(Message::CloseKeybindDialogAndSave);
-                                }
-                                cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Escape) => {
-                                    // This should be handled by Modal's on_esc, but defensive
-                                    return self.update(Message::CloseKeybindDialogNoSave);
-                                }
-                                _ => {
-                                    if !is_just_modifier_key(&key) {
-                                        self.keybind_dialog_current_key_text = match key {
-                                            cosmic::iced::keyboard::Key::Named(nk) => named_key_to_string(nk),
-                                            cosmic::iced::keyboard::Key::Character(s) => {
-                                                if s.chars().any(char::is_control) || s.is_empty() { None }
-                                                else { Some(s.to_uppercase()) }
-                                            }
-                                            cosmic::iced::keyboard::Key::Unidentified => None, // Or some placeholder
-                                        };
-                                    } else {
-                                        // If only a modifier key was pressed (e.g. pressing Ctrl then releasing it without another key)
-                                        // we might want to clear the current_key_text if it wasn't part of a combo.
-                                        // This logic can get complex. For now, we only set current_key_text on non-modifiers.
-                                    }
-                                }
-                            }
-                        }
-                        cosmic::iced::keyboard::Event::KeyReleased { key, modifiers, modified_key, physical_key, location } => {
-                             // Update live modifiers on release too, as they might have changed
-                            self.keybind_dialog_live_modifiers = modifiers;
-                            // If a non-modifier key was just released, and no other non-modifier key is held,
-                            // consider the chord complete. For simplicity, we capture on KeyPressed.
-                            // If you want to capture on release, the logic changes.
-                            _ = modified_key;
-                            _ = physical_key;
-                            _ = location;
-                        }
-                        cosmic::iced::keyboard::Event::ModifiersChanged(modifiers) => {
-                            self.keybind_dialog_live_modifiers = modifiers;
-                            self.keybind_dialog_current_modifiers_text = modifiers_to_strings(modifiers);
-                            // If only modifiers are active, clear the non-modifier key part
-                            // Place Holder...
-                            // fn is_key_still_pressed_for_chord(_modifiers: &cosmic::iced::keyboard::Modifiers) -> bool { true }
-                            //if self.keybind_dialog_current_key_text.is_some() && !is_key_still_pressed_for_chord(&self.keybind_dialog_live_modifiers) {
-                               // This part is tricky: how to know if the non-modifier key is still part of the intended chord?
-                               // For now, we don't clear current_key_text just on modifier change.
-                            //}
-                        }
-                    }
-                }
             }
             Message::KeybindDialogClearKeys => {
                 if self.keybind_dialog_open_for_index.is_some() {
@@ -3661,16 +3611,36 @@ fn build_keybinding_row_ui<'a>(
 }
 
 
-// Helper to convert cosmic::iced::keyboard::Modifiers to Vec<String>
+ // Helper to convert cosmic::iced::keyboard::Modifiers to Vec<String>
 fn modifiers_to_strings(mods: cosmic::iced::keyboard::Modifiers) -> Vec<String> {
-    let mut strings = Vec::new();
-    if mods.control() { strings.push("Ctrl".to_string()); }
-    if mods.alt() { strings.push("Alt".to_string()); }
-    if mods.shift() { strings.push("Shift".to_string()); }
-    if mods.logo() { strings.push("Super".to_string()); }
+     let mut strings = Vec::new();
+    
+    // Check which modifiers are active and add corresponding strings
+    if mods.control() { 
+        strings.push("Ctrl".to_string()); 
+        log::warn!("Ctrl modifier detected");
+    }
+    if mods.alt() { 
+        strings.push("Alt".to_string()); 
+        log::warn!("Alt modifier detected");
+    }
+    if mods.shift() { 
+        strings.push("Shift".to_string()); 
+        log::warn!("Shift modifier detected");
+    }
+    if mods.logo() { 
+        strings.push("Super".to_string()); 
+        log::warn!("Super/Logo modifier detected");
+    }
+    
     strings.sort(); // For consistent order
+    
+    // Add more detailed logging about the final result
+    log::warn!("modifiers_to_strings result: {:?}", strings);
+    log::warn!("Raw modifiers struct: {:?}", mods);
+    
     strings
-}
+} 
 
 // Helper to format cosmic::iced::keyboard::Key::Named into a string
 fn named_key_to_string(named: cosmic::iced::keyboard::key::Named) -> Option<String> {
@@ -3697,7 +3667,7 @@ fn is_just_modifier_key(key: &cosmic::iced::keyboard::Key) -> bool {
             cosmic::iced::keyboard::key::Named::Alt |
             cosmic::iced::keyboard::key::Named::Control |
             cosmic::iced::keyboard::key::Named::Shift |
-            cosmic::iced::keyboard::key::Named::Super
+            cosmic::iced::keyboard::key::Named::Super 
         )
     )
 }
