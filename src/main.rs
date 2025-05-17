@@ -6,6 +6,7 @@ use alacritty_terminal::{event::Event as TermEvent, term, term::color::Colors as
 use cosmic::iced::clipboard::dnd::DndAction;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::menu::key_bind::{KeyBind, Modifier};
+use cosmic::widget::settings::item;
 use cosmic::iced::widget::{Column, Row, Text, scrollable, container};
 use cosmic::widget::DndDestination;
 use cosmic::{
@@ -52,6 +53,10 @@ use tokio::sync::mpsc;
 use config::{
     AppTheme, ColorScheme, ColorSchemeId, ColorSchemeKind, Config, ConfigKeyBinding, Profile, ProfileId, CONFIG_VERSION
 };
+
+
+use std::borrow::Cow; // For item builder title
+
 mod config;
 mod mouse_reporter;
 
@@ -281,6 +286,57 @@ impl Action {
             Self::ZoomReset => Message::ZoomReset,
         }
     }
+
+
+        pub fn display_name(&self) -> String {
+            // Add these fluent IDs (e.g., "action-name-about") to your en/cosmic_term.ftl file.
+            match self {
+                Action::About => fl!("action-name-about"),
+                Action::ClearScrollback => fl!("action-name-clear-scrollback"),
+                Action::ColorSchemes(_ /*kind*/) => fl!("action-name-color-schemes"),
+                Action::Copy => fl!("action-name-copy"),
+                Action::CopyOrSigint => fl!("action-name-copy-or-sigint"),
+                Action::CopyPrimary => fl!("action-name-copy-primary"),
+                Action::Find => fl!("action-name-find"),
+                Action::Keybinds => fl!("action-name-keybinds"),
+                Action::PaneFocusDown => fl!("action-name-pane-focus-down"),
+                Action::PaneFocusLeft => fl!("action-name-pane-focus-left"),
+                Action::PaneFocusRight => fl!("action-name-pane-focus-right"),
+                Action::PaneFocusUp => fl!("action-name-pane-focus-up"),
+                Action::PaneSplitHorizontal => fl!("action-name-pane-split-horizontal"),
+                Action::PaneSplitVertical => fl!("action-name-pane-split-vertical"),
+                Action::PaneToggleMaximized => fl!("action-name-pane-toggle-maximized"),
+                Action::Paste => fl!("action-name-paste"),
+                Action::PastePrimary => fl!("action-name-paste-primary"),
+                Action::ProfileOpen(_ /*id*/) => fl!("action-name-profile-open"),
+                Action::Profiles => fl!("action-name-profiles"),
+                Action::SaveKeyBindings => fl!("action-name-save-keybindings"),
+                Action::SelectAll => fl!("action-name-select-all"),
+                Action::Settings => fl!("action-name-settings"),
+                Action::ShowHeaderBar(_ /*show*/) => fl!("action-name-show-headerbar"),
+                Action::TabActivate0 => fl!("action-name-tab-activate0"),
+                Action::TabActivate1 => fl!("action-name-tab-activate1"),
+                Action::TabActivate2 => fl!("action-name-tab-activate2"),
+                Action::TabActivate3 => fl!("action-name-tab-activate3"),
+                Action::TabActivate4 => fl!("action-name-tab-activate4"),
+                Action::TabActivate5 => fl!("action-name-tab-activate5"),
+                Action::TabActivate6 => fl!("action-name-tab-activate6"),
+                Action::TabActivate7 => fl!("action-name-tab-activate7"),
+                Action::TabActivate8 => fl!("action-name-tab-activate8"),
+                Action::TabClose => fl!("action-name-tab-close"),
+                Action::TabNew => fl!("action-name-tab-new"),
+                Action::TabNewNoProfile => fl!("action-name-tab-new-no-profile"),
+                Action::TabNext => fl!("action-name-tab-next"),
+                Action::TabPrev => fl!("action-name-tab-prev"),
+                Action::WindowClose => fl!("action-name-window-close"),
+                Action::WindowNew => fl!("action-name-window-new"),
+                Action::ZoomIn => fl!("action-name-zoom-in"),
+                Action::ZoomOut => fl!("action-name-zoom-out"),
+                Action::ZoomReset => fl!("action-name-zoom-reset"),
+                // Eventually:
+                // Action::OpenUrlUnderCursor => fl!("action-name-open-url"),
+            }
+        }
 }
 
 impl MenuAction for Action {
@@ -379,6 +435,27 @@ pub enum Message {
     ZoomIn,
     ZoomOut,
     ZoomReset,
+
+    /// User clicked "Record New Keys" for the binding at this `usize` index
+    /// in `self.config.key_binds`.
+    StartRecordingKeyBinding(usize),
+
+    /// User clicked "Recording" button or pressed Escape to cancel recording
+    /// for the binding at the given `usize` index.
+    CancelRecordingKeyBinding(usize),
+
+    /// Internal message when a key combination is captured by the global event handler
+    /// during recording mode.
+    ProcessCapturedKeyCombination {
+        binding_index: usize,
+        key_code: cosmic::iced::keyboard::Key,       
+        key_modifiers: cosmic::iced::keyboard::Modifiers, 
+    },
+
+    /// Internal message to trigger saving the `self.config.key_bindings` to disk.
+    PersistKeyBindingsConfig,
+
+    
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -431,7 +508,7 @@ pub struct App {
     profile_expanded: Option<ProfileId>,
     show_advanced_font_settings: bool,
     modifiers: Modifiers,
-    key_binding_map: HashMap<KeyBind, Action>,
+    currently_recording_binding_index: Option<usize>,
 }
 
 impl App {
@@ -574,7 +651,7 @@ impl App {
     fn update_keybinds(&mut self) {
         // 1. Get the base map from the hardcoded defaults
         //    This provides the starting set of bindings.
-        let mut key_binding_map = key_binds(); // Call the existing function that returns HashMap<KeyBind, Action>
+        let mut key_binds = key_binds(); // Call the existing function that returns HashMap<KeyBind, Action>
 
         // 2. Iterate through the loaded config bindings (which are ConfigKeyBinding)
         for config_binding in &self.config.key_bindings {
@@ -599,10 +676,10 @@ impl App {
             // 4. Insert into the map, allowing config bindings to override defaults
             //    HashMap::insert replaces the value if the key already exists.
             //    This correctly handles overriding default bindings.
-            key_binding_map.insert(key_bind, config_binding.action.clone()); // Clone action if Action isn't Copy
+            key_binds.insert(key_bind, config_binding.action.clone()); // Clone action if Action isn't Copy
         }
         // 5. Store the resulting map in the application's state
-        self.key_binding_map = key_binding_map;
+        self.key_binds = key_binds;
     }
 
 
@@ -1347,32 +1424,72 @@ impl App {
         .into()
     }
     
-    fn key_binds_ui(&self) -> Element<Message> {
-        let bindings_list = self.config.key_bindings.iter().map(|binding| {
-            // For each binding, create UI elements to display it
-            // This is a basic display - editing comes later
-            let key_text = Text::new(format!("Key: {}, Mods: {}", binding.key, binding.mods));
-            let action_text = Text::new(format!("Action: {:?}", binding.action)); // Debug print Action for now
 
-            Row::new()
-                .push(key_text)
-                .push(action_text)
-                .spacing(10) // Add some spacing between elements
-                .into() // Convert Row into an Element
-        }).collect::<Vec<Element<Message>>>(); // Collect all binding rows into a Vec
+    // Handles user presing to modify "Keybinds" (Key Binds, Keys, Chords, Mods)
+    pub fn key_binds_ui(&self) -> cosmic::Element<'_, Message> {
+        // Page Title
+        // Arbitrary size
+        let title_widget = cosmic::widget::text("Keybindings")
+            .size(32) 
+            .width(cosmic::iced::Length::Shrink);
 
-        // Put the list of binding rows into a Column
-        let content = Column::with_children(bindings_list).spacing(10); // Add spacing between rows
+        let title_container = cosmic::widget::container(title_widget)
+            .width(cosmic::iced::Length::Shrink) 
+            .padding([0, 0, 20, 0]) // Padding below title
+            .align_x(cosmic::iced::Alignment::Center); // Center the shrunk title container
 
-        // Make the content scrollable if there are many bindings
-        let scrollable_content = scrollable(content);
+        let mut elements_for_column: Vec<cosmic::Element<'_, Message>> = Vec::new();
+        if self.config.key_bindings.is_empty() {
+            let placeholder_text = cosmic::widget::text("No keybindings configured.")
+                .width(cosmic::iced::Length::Shrink);
+            let placeholder_container = cosmic::widget::container(placeholder_text)
+                .width(cosmic::iced::Length::Shrink) 
+                .padding(20)
+                .align_x(cosmic::iced::Alignment::Center);
+            elements_for_column.push(placeholder_container.into());
+        } else {
+            for (index, binding) in self.config.key_bindings.iter().enumerate() {
+                elements_for_column.push(build_keybinding_row_ui(self, binding, index));
+            }
+        }
 
-        // Wrap in a container if needed for padding or styling
-        container(scrollable_content)
-            .padding(20) // Add padding around the content
-            .into() // Convert container into an Element<Message>
+        let keybindings_content_column = cosmic::widget::Column::with_children(elements_for_column)
+            .spacing(8)
+            .width(cosmic::iced::Length::Shrink) // Column width shrinks to its widest child
+            .padding([0, 5, 0, 5]);             // Padding inside the column
+
+        let direct_scrollable_child = keybindings_content_column
+            .height(cosmic::iced::Length::Shrink);
+
+        // Height MUST be fixed to define the scrollable viewport (Otherwise assert causes errors).
+        let scrollable_widget = cosmic::widget::scrollable(direct_scrollable_child)
+            .width(cosmic::iced::Length::Shrink) 
+            .height(cosmic::iced::Length::Fixed(400.0)); 
+
+        let scrollable_area_wrapper = cosmic::widget::container(scrollable_widget)
+            .width(cosmic::iced::Length::Fixed(600.0))  
+            .height(cosmic::iced::Length::Shrink)       
+            .align_x(cosmic::iced::Alignment::Center);  
+
+        let main_page_column = cosmic::widget::column()
+            .push(title_container)
+            .push(scrollable_area_wrapper)
+            .spacing(10)
+            .width(cosmic::iced::Length::Shrink)  
+            .height(cosmic::iced::Length::Shrink) 
+            .align_x(cosmic::iced::Alignment::Center); 
+
+        // Overall page container - this is the root element returned by this function.
+        cosmic::widget::container(main_page_column)
+            .width(cosmic::iced::Length::Shrink)  // NO FILL
+            .height(cosmic::iced::Length::Shrink) // NO FILL
+            .padding(20)
+            .align_x(cosmic::iced::Alignment::Center)
+            .align_y(cosmic::iced::Alignment::Center) // Try to center vertically too
+            .into()
     }
     
+
     
     fn get_default_profile(&self) -> Option<ProfileId> {
         self.config.default_profile
@@ -1685,7 +1802,7 @@ impl Application for App {
             profile_expanded: None,
             show_advanced_font_settings: false,
             modifiers: Modifiers::empty(),
-            key_binding_map: HashMap::new(),
+            currently_recording_binding_index: None,
         };
 
         app.set_curr_font_weights_and_stretches();
@@ -2197,11 +2314,50 @@ impl Application for App {
                 config_set!(focus_follow_mouse, focus_follow_mouse);
             }
             Message::Key(modifiers, key) => {
-                log::debug!("Key pressed: {:?}, Modifiers: {:?}", key, modifiers);
-                for (key_bind, action) in &self.key_binds {
-                    if key_bind.matches(modifiers, &key) {
-                        return self.update(action.message(None));
+                 if let Some(target_recording_index) = self.currently_recording_binding_index {
+                    // --- We are in key recording mode! ---
+                    log::debug!("Key event received while in recording mode: {:?}, {:?}", key, modifiers);
+
+                    // Check for Escape key to cancel recording
+                    if key == Key::Named(Named::Escape) {
+                        log::info!("Key binding recording cancelled by Escape key for index {}.", target_recording_index);
+                        // Dispatch CancelRecordingKeyBinding.
+                        // We directly call self.update here to change state and avoid complex Task chaining for this simple case.
+                        // Or, more cleanly, return a Task for the message.
+                        // self.currently_recording_binding_index = None; // Reset state
+                        return Task::perform(async {}, move |_| cosmic::Action::App(Message::CancelRecordingKeyBinding(target_recording_index)));
+                    } else {
+
+                        let captured_key_code = key.clone();
+                        let captured_key_modifiers = modifiers; // Modifiers is Copy, so direct use is fine, but clone() is safer if unsure.
+
+                        // Any other key press is considered the new binding.
+                        // Dispatch ProcessCapturedKeyCombination.
+                        log::info!("Key combination captured for index {}: {:?} + {:?}", target_recording_index, captured_key_modifiers, captured_key_code);
+                        return Task::perform(async {}, move |_| 
+                            cosmic::Action::App(Message::ProcessCapturedKeyCombination {
+                                binding_index: target_recording_index,
+                                key_code: captured_key_code.clone(), // Pass the captured key (Redundant?)
+                                key_modifiers: captured_key_modifiers, // Pass the captured modifiers
+                            }
+                        ));
                     }
+                    // IMPORTANT: If in recording mode, we usually don't want to process the key further
+                    // for normal application actions. The return statements above handle this.
+                } else {
+                    // --- Not in recording mode, process key press as a normal application shortcut ---
+                    // Your existing logic for handling Message::Key for shortcuts:
+                    // This likely involves looking up `self.key_binding_map.get(&KeyBind{...})`
+                    // (or self.key_binds) and then dispatching the corresponding Action's message.
+                    // Example:
+                    for (key_bind_def, action) in &self.key_binds { // Use the runtime map
+                        if key_bind_def.matches(modifiers, &key) {
+                            log::debug!("Matched runtime keybind: {:?} for action {:?}", key_bind_def, action);
+                            return self.update(action.message(None)); // Assuming action.message() gives the Message
+                        }
+                    }
+                    // If no shortcut matches, the key might be for terminal input.
+                    // Your existing logic should handle this (e.g., sending to active terminal).
                 }
             }
             Message::LaunchUrl(url) => {
@@ -2806,6 +2962,102 @@ impl Application for App {
                     cosmic::app::Action::Surface(a),
                 ));
             }
+
+            Message::StartRecordingKeyBinding(binding_index) => {
+                log::info!("Starting key recording for binding index: {}", binding_index);
+                self.currently_recording_binding_index = Some(binding_index);
+                // No specific command needed here, UI will update due to state change.
+            }
+
+            Message::CancelRecordingKeyBinding(binding_index) => {
+                log::info!("Cancelling key recording for binding index: {}", binding_index);
+                // Only cancel if we were actually recording for this index, or generally.
+                if self.currently_recording_binding_index == Some(binding_index) || self.currently_recording_binding_index.is_some() {
+                    self.currently_recording_binding_index = None;
+                }
+            }
+
+            Message::ProcessCapturedKeyCombination { binding_index, key_code, key_modifiers } => {
+                log::info!("Processing captured keys for binding index: {}", binding_index);
+                self.currently_recording_binding_index = None; // Stop recording mode immediately
+
+                // 1. Convert captured iced keys to your String formats for ConfigKeyBinding
+                let new_key_string = match key_code {
+                    Key::Character(s) => s.to_lowercase(), // Store as lowercase for consistency
+                    Key::Named(named_key) => {
+                        // Convert named key to a string.
+                        // This should ideally match the format your `parse_key_string` expects
+                        // or the format produced by `build_default_key_bindings`.
+                        // Using Debug format for NamedKey is a common approach.
+                        format!("{:?}", named_key)
+                    },
+                    _ => {
+                        log::warn!("Captured an unsupported/unknown key type: {:?}", key_code);
+                        // Decide how to handle: keep old, clear, or use a placeholder.
+                        // For now, let's assume we want to effectively clear/invalidate it if unknown.
+                        // Or, you could choose to not update if the key is unknown.
+                        if let Some(binding_to_clear) = self.config.key_bindings.get_mut(binding_index) {
+                            binding_to_clear.key = "unknown_captured_key".to_string(); // Or empty string
+                            binding_to_clear.mods = String::new();
+                        }
+                        // Then trigger persistence
+                        return Task::perform(async {}, |_| cosmic::Action::App(Message::PersistKeyBindingsConfig));
+                    }
+                };
+
+                let mut mods_vec = Vec::new();
+                if key_modifiers.control() { mods_vec.push("Control"); }
+                if key_modifiers.alt() { mods_vec.push("Alt"); }
+                if key_modifiers.shift() { mods_vec.push("Shift"); }
+                if key_modifiers.logo() { mods_vec.push("Super"); } // Or "Meta" or your preferred term
+                let new_mods_string = mods_vec.join("|");
+
+                // 2. Update the in-memory config.key_bindings
+                if let Some(binding_to_update) = self.config.key_bindings.get_mut(binding_index) {
+                    binding_to_update.key = new_key_string.clone(); // Clone if new_key_string is used again
+                    binding_to_update.mods = new_mods_string.clone(); // Clone if new_mods_string is used again
+                    log::info!(
+                        "In-memory config updated for index {}: Action {:?}, New Keys: {} + {}",
+                        binding_index,
+                        binding_to_update.action,
+                        new_mods_string,
+                        new_key_string
+                    );
+                } else {
+                    log::error!("Invalid binding_index {} for ProcessCapturedKeyCombination", binding_index);
+                    return Task::none(); // Critical error, index out of bounds
+                }
+
+                // 3. Rebuild your runtime keybinding map (self.key_binding_map)
+                // This calls your existing method to parse self.config.key_bindings
+                // and update the active key map.
+                self.update_keybinds();
+                log::info!("Runtime key_binding_map has been rebuilt.");
+
+
+                // 4. Trigger persistence of the entire key_bindings configuration
+                // We return a Task that will send another message to handle the actual save.
+                // This keeps the current message handler focused.
+                return Task::perform(async {}, |_| cosmic::Action::App(Message::PersistKeyBindingsConfig));
+            }
+
+            Message::PersistKeyBindingsConfig => {
+                log::info!("Attempting to persist key_bindings to config file...");
+                if let Some(config_handler_ref) = &self.config_handler {
+                    // The `key_bindings` field is part of `self.config`.
+                    // We save the entire updated `Vec<ConfigKeyBinding>` under the "key_bindings" key.
+                    match config_handler_ref.set("key_bindings", &self.config.key_bindings) {
+                        Ok(_) => log::info!("Successfully persisted key_bindings configuration to disk."),
+                        Err(err) => log::error!("Failed to save 'key_bindings' config entry to disk: {}", err),
+                    }
+                } else {
+                    log::warn!("Config handler not available, key_bindings change not persisted to disk.");
+                }
+                // Optionally, if there are UI elements that depend on knowing if save is complete,
+                // you could update a state here or return another message. For now, Task::none().
+            }
+
+
         }
 
         Task::none()
@@ -3084,4 +3336,64 @@ impl Application for App {
             },
         ])
     }
+}
+
+
+
+
+// TODO: Put in a better place.
+// build_keybinding_row_ui function
+fn build_keybinding_row_ui<'a>(
+    app_state: &'a App, 
+    binding: &'a config::ConfigKeyBinding,
+    index: usize,
+) -> cosmic::Element<'a, Message> { 
+
+    let action_label_string: String = binding.action.display_name();
+    let action_text = cosmic::widget::text(action_label_string)
+        .width(cosmic::iced::Length::Shrink);
+
+    let mods_display_str = if binding.mods.is_empty() {
+        String::new()
+    } else {
+        binding.mods.split('|').map(str::trim).filter(|s| !s.is_empty()).collect::<Vec<&str>>().join(" + ")
+    };
+    let full_key_combo_str = if mods_display_str.is_empty() {
+        binding.key.clone()
+    } else {
+        format!("{} + {}", mods_display_str, &binding.key)
+    };
+    let key_combo_text_widget = cosmic::widget::text(full_key_combo_str)
+        .width(cosmic::iced::Length::Shrink);
+
+    let is_this_item_being_recorded = app_state.currently_recording_binding_index == Some(index);
+    let is_any_other_item_being_recorded = app_state.currently_recording_binding_index.is_some() && !is_this_item_being_recorded;
+
+
+    let mut record_button_builder = 
+        widget::button::custom(icon_cache_get("list-add-symbolic", 16))
+                .padding(8)
+                .class(style::Button::Icon);
+
+    if is_this_item_being_recorded {
+        record_button_builder = widget::button::custom(icon_cache_get("window-close-symbolic", 16))
+                        .padding(8)
+                        .class(style::Button::Icon);
+
+        record_button_builder = record_button_builder.on_press(Message::CancelRecordingKeyBinding(index));
+    } else if !is_any_other_item_being_recorded {
+        record_button_builder = record_button_builder.on_press(Message::StartRecordingKeyBinding(index));
+    }
+
+    cosmic::widget::row()
+        .push(action_text)
+        .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fixed(20.0))) 
+        .push(key_combo_text_widget)
+        .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fill)) 
+        .push(record_button_builder)
+        .spacing(10) 
+        .align_y(cosmic::iced::Alignment::Center)
+        .width(cosmic::iced::Length::Shrink)
+        .height(cosmic::iced::Length::Shrink)
+        .into()
 }
