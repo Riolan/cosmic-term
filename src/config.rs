@@ -208,10 +208,10 @@ pub struct ConfigKeyBinding {
 
 
 impl ConfigKeyBinding {
-    fn key_enum_to_string(key_enum_val: &cosmic::iced::keyboard::Key) -> String {
+    pub fn key_enum_to_string(key_enum_val: &cosmic::iced::keyboard::Key) -> String {
         match key_enum_val {
             cosmic::iced::keyboard::Key::Character(c) => c.to_string(), // Assuming c is SmolStr or similar that implements ToString
-            cosmic::iced::keyboard::Key::Named(named_key) => format!("{:?}", named_key), // Using Debug representation
+            cosmic::iced::keyboard::Key::Named(named_key) => serde_json::to_string(named_key).unwrap(), //format!("{:?}", named_key), // Using Debug representation
             cosmic::iced::keyboard::Key::Unidentified => todo!(),
         }
     }

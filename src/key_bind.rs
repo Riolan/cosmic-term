@@ -123,12 +123,14 @@ pub fn build_default_key_bindings() -> Vec<ConfigKeyBinding> {
     hardcoded_map.into_iter().map(|(key_bind, action)| {
         // Convert the KeyBind struct into the fields needed for ConfigKeyBinding
         // This mapping depends on how you designed ConfigKeyBinding
-        let key_string = match key_bind.key {
+        /*let key_string = match key_bind.key {
             Key::Character(c) => c.to_string(),
             Key::Named(named_key) => format!("{:?}", named_key), // Convert named key enum to string
             // Handle other Key variants if necessary
             _ => "UnknownKey".to_string(), // Fallback for unhandled key types
-        };
+        };*/
+
+        let key_string = ConfigKeyBinding::key_enum_to_string(&key_bind.key);
 
         let mods_string = key_bind.modifiers.into_iter()
             .map(|m| format!("{:?}", m)) // Convert Modifier enum to string

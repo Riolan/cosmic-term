@@ -586,7 +586,7 @@ impl App {
     // Helper function to parse key strings into the internal Key type
     // This needs to handle named keys ("Enter", "Tab") and character keys ("A", ",").
     // Needs to match the format expected in your ConfigKeyBinding.key string.
-    fn parse_key_string(key_str: &str) -> Key {
+    /*fn parse_key_string(key_str: &str) -> Key {
         // Check for single character keys first
         if key_str.len() == 1 {
             // Be careful with casing if config strings might be lower/upper
@@ -614,6 +614,9 @@ impl App {
                 // ... F3 to F12 ...
                 // ... other special keys like 'space', 'plus', 'minus' etc if you use them ...
 
+                "copy" => Key::Named(Named::Copy),
+                "insert" => Key::Named(Named::Insert),
+                "paste" => Key::Named(Named::Paste),
                 // --- CORRECTED FALLBACK ---
                 // If the string doesn't match a single char or a known named key,
                 // it's an unrecognized key string. It's better to return an unknown key
@@ -624,7 +627,41 @@ impl App {
                 }
             }
         }
+    }*/
+
+
+    
+    fn parse_key_string(key_str: &str) -> iced::keyboard::Key {
+        // Check for single character keys first
+        if key_str.len() == 1 {
+            return Key::Character(key_str.into());
+        }
+
+
+        match serde_json::from_str::<iced::keyboard::key::Named>(key_str) {
+            Ok(named_key) => {
+                let x = format!("{:?}", named_key);
+                log::warn!("serde_json::from_str::<iced::keyboard::key::Named>(key_str): {}" , x);
+                iced::keyboard::Key::Named(named_key)
+            
+            },
+            Err(e) => {
+                    // This means key_str was not a valid JSON representation of a Named key.
+                    // e.g., key_str was "Alt" instead of "\"Alt\""
+                    // or key_str was "{}" or some other invalid JSON for this type.
+                    // Consider returning Key::Unidentified or a custom error.
+                    log::warn!("ERROR IN PARSE STR: {}" , e);
+                    Key::Unidentified
+                }
+        }
+        //let out : iced::keyboard::key::Named = serde_json::from_str(key_str).unwrap();
+
+        //iced::keyboard::Key::Named(out)
+        //Key::Unidentified 
+        // Look up the key string in our map
+        // cosmic::iced::keyboard::Key::Named(iced::keyboard::key::Named::from(key_str))
     }
+
 
 
 
@@ -1974,7 +2011,7 @@ impl Application for App {
             pane_model,
             config_handler: flags.config_handler,
             config: flags.config,
-            key_binds: HashMap::new(), // since we call update keybinds by default start with empty
+            key_binds: key_binds(), // since we call update keybinds by default start with empty
             app_themes,
             font_names,
             font_size_names,
@@ -2017,6 +2054,20 @@ impl Application for App {
 
         // Initial update from the default keybinds to the saved.
         app.update_keybinds();
+        if let Some(config_handler) = &app.config_handler {
+            // Access the current state of the key_bindings from the in-memory config
+            let key_bindings_to_save = app.config.key_bindings.clone(); // Clone to satisfy ownership/borrowing
+
+            // Use the config_handler to set the "key_bindings" key
+            match config_handler.set("key_bindings", key_bindings_to_save) {
+                Ok(_) => log::info!("Key bindings saved successfully!"),
+                Err(e) => log::error!("Failed to save key bindings: {}", e),
+            }
+        } else {
+            log::warn!("Cannot save key bindings: config handler not available.");
+        }
+
+
         app.set_curr_font_weights_and_stretches();
         let command = Task::batch([app.update_config(), app.update_title(None)]);
 
@@ -2583,7 +2634,7 @@ impl Application for App {
                                 if !is_just_modifier_key(&key) {
                                     self.keybind_dialog_current_modifiers_lock = true;
                                     self.keybind_dialog_current_key_text = match key {
-                                        cosmic::iced::keyboard::Key::Named(nk) => named_key_to_string(nk),
+                                        cosmic::iced::keyboard::Key::Named(_) => Some(ConfigKeyBinding::key_enum_to_string(&key)),
                                         cosmic::iced::keyboard::Key::Character(s) => {
                                             if s.chars().any(char::is_control) || s.is_empty() { None }
                                             else { Some(s.to_uppercase()) }
@@ -3754,20 +3805,6 @@ fn modifiers_to_strings(mods: cosmic::iced::keyboard::Modifiers) -> Vec<String> 
     strings
 } 
 
-// Helper to format cosmic::iced::keyboard::Key::Named into a string
-fn named_key_to_string(named: cosmic::iced::keyboard::key::Named) -> Option<String> {
-    // You'll want a more comprehensive mapping here
-    match named {
-        cosmic::iced::keyboard::key::Named::Space => Some("Space".to_string()),
-        cosmic::iced::keyboard::key::Named::Enter => Some("Enter".to_string()), // Special handling
-        cosmic::iced::keyboard::key::Named::Escape => Some("Escape".to_string()), // Special handling
-        cosmic::iced::keyboard::key::Named::Backspace => Some("Backspace".to_string()),
-        cosmic::iced::keyboard::key::Named::Tab => Some("Tab".to_string()),
-        cosmic::iced::keyboard::key::Named::Super => Some("Super".to_string()),
-        // Add other common named keys: ArrowUp, ArrowDown, F1-F12 etc.
-        _ => Some(format!("{:?}", named)), // Default representation
-    }
-}
 
 
 // Assuming that LOGO is synonymous with SUPER... 
@@ -3783,3 +3820,4 @@ fn is_just_modifier_key(key: &cosmic::iced::keyboard::Key) -> bool {
         )
     )
 }
+
