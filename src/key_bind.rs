@@ -121,14 +121,6 @@ pub fn build_default_key_bindings() -> Vec<ConfigKeyBinding> {
 
     // Convert the HashMap into the desired Vec<ConfigKeyBinding>
     hardcoded_map.into_iter().map(|(key_bind, action)| {
-        // Convert the KeyBind struct into the fields needed for ConfigKeyBinding
-        // This mapping depends on how you designed ConfigKeyBinding
-        /*let key_string = match key_bind.key {
-            Key::Character(c) => c.to_string(),
-            Key::Named(named_key) => format!("{:?}", named_key), // Convert named key enum to string
-            // Handle other Key variants if necessary
-            _ => "UnknownKey".to_string(), // Fallback for unhandled key types
-        };*/
 
         let key_string = ConfigKeyBinding::key_enum_to_string(&key_bind.key);
 
@@ -145,3 +137,45 @@ pub fn build_default_key_bindings() -> Vec<ConfigKeyBinding> {
     }).collect() // Collect the results into a Vec
 }
 
+
+ // Helper to convert cosmic::iced::keyboard::Modifiers to Vec<String>
+pub fn modifiers_to_strings(mods: cosmic::iced::keyboard::Modifiers) -> Vec<String> {
+     let mut strings = Vec::new();
+    
+    // Check which modifiers are active and add corresponding strings
+    if mods.control() { 
+        strings.push("Ctrl".to_string()); 
+    }
+    if mods.alt() { 
+        strings.push("Alt".to_string()); 
+    }
+    if mods.shift() { 
+        strings.push("Shift".to_string()); 
+    }
+    if mods.logo() { 
+        strings.push("Super".to_string()); 
+    }
+    
+    strings.sort(); // For consistent order
+    
+    // Add more detailed logging about the final result
+    log::warn!("modifiers_to_strings result: {:?}", strings);
+    
+    strings
+} 
+
+
+
+// Assuming that LOGO is synonymous with SUPER... 
+// Alt + Shift + Ctrl + Super
+// Helper to check if a key is primarily a modifier
+pub fn is_just_modifier_key(key: &cosmic::iced::keyboard::Key) -> bool {
+    matches!(key,
+        cosmic::iced::keyboard::Key::Named(
+            cosmic::iced::keyboard::key::Named::Alt |
+            cosmic::iced::keyboard::key::Named::Control |
+            cosmic::iced::keyboard::key::Named::Shift |
+            cosmic::iced::keyboard::key::Named::Super 
+        )
+    )
+}

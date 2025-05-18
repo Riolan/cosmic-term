@@ -60,8 +60,6 @@ use config::{
 };
 
 
-use std::borrow::Cow; // For item builder title
-
 mod config;
 mod mouse_reporter;
 
@@ -1513,6 +1511,63 @@ impl App {
     }
     
 
+
+
+
+
+    fn build_keybinding_row_ui<'a>(
+        &self, /*app_state: &'a App,*/
+        binding: &'a config::ConfigKeyBinding,
+        index: usize,
+    ) -> cosmic::Element<'a, Message> {
+        let action_label_string: String = binding.action.display_name();
+        let action_text = cosmic::widget::text(action_label_string)
+            .width(cosmic::iced::Length::Shrink);
+
+        let mods_display_str = if binding.mods.is_empty() {
+            String::new()
+        } else {
+            binding.mods.split('|').filter(|s| !s.is_empty()).collect::<Vec<&str>>().join(" + ")
+        };
+        let full_key_combo_str = if mods_display_str.is_empty() {
+            binding.key.clone()
+        } else {
+            if binding.key.is_empty() { mods_display_str } else { format!("{} + {}", mods_display_str, &binding.key) }
+        };
+        let key_combo_text_widget = cosmic::widget::text(full_key_combo_str)
+            .width(cosmic::iced::Length::Shrink);
+
+        // Button always shows an "edit" icon. Disabled if another dialog is already open.
+        let is_any_dialog_open = self.keybind_dialog_open_for_index.is_some();
+
+
+        
+        // This icon semi looked like an Add/Modify/Change button so roling with it.
+        let mut modify_button = widget::button::custom(icon_cache_get("list-add-symbolic", 16))
+                    .padding(8)
+                    .class(style::Button::Icon);
+
+        if !is_any_dialog_open {
+            modify_button = modify_button.on_press(Message::OpenKeybindDialog(index));
+        }
+
+        cosmic::widget::row()
+            .push(action_text)
+            .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fixed(20.0)))
+            .push(key_combo_text_widget)
+            .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fill)) // Pushes button to the right
+            .push(modify_button)
+            .spacing(10)
+            .align_y(cosmic::iced::Alignment::Center)
+            .width(cosmic::iced::Length::Shrink)
+            .height(cosmic::iced::Length::Shrink)
+            .into()
+    }
+
+
+
+
+
     // Handles user presing to modify "Keybinds" (Key Binds, Keys, Mods)
     pub fn key_binds_ui(&self) -> cosmic::Element<'_, Message> {
         // This is the UI that will be visible normally and will be the bottom layer.
@@ -1541,8 +1596,21 @@ impl App {
                 .width(cosmic::iced::Length::Shrink).padding(20).align_x(cosmic::iced::Alignment::Center);
             elements_for_column.push(placeholder.into());
         } else {
-            for (i, b) in self.config.key_bindings.iter().enumerate() {
-                elements_for_column.push(build_keybinding_row_ui(self, b, i));
+            //for (i, b) in self.config.key_bindings.iter().enumerate() {
+            //    elements_for_column.push(self.build_keybinding_row_ui( b, i));
+            //}
+            let mut bindings_to_display: Vec<(usize, &config::ConfigKeyBinding)> =
+            self.config.key_bindings.iter().enumerate().collect();
+            bindings_to_display.sort_by(|(_idx_a, binding_a), (_idx_b, binding_b)| {
+            binding_a.action.display_name().to_lowercase().cmp(
+                &binding_b.action.display_name().to_lowercase())
+             });
+
+             for item_tuple in bindings_to_display.iter() {
+                let original_index = item_tuple.0;
+                let binding_ref = item_tuple.1;
+
+                elements_for_column.push(self.build_keybinding_row_ui(binding_ref, original_index));
             }
         }
         let keybindings_list_col = cosmic::widget::Column::with_children(elements_for_column)
@@ -1559,15 +1627,7 @@ impl App {
             .spacing(10).width(cosmic::iced::Length::Shrink).height(cosmic::iced::Length::Shrink)
             .align_x(cosmic::iced::Alignment::Center);
         
-        /*let base_page_element: cosmic::Element<'_, Message> = cosmic::widget::container(base_ui_column)
-            .width(cosmic::iced::Length::Shrink) 
-            .height(cosmic::iced::Length::Shrink)
-            .padding(20)
-            .align_x(cosmic::iced::Alignment::Center)
-            .align_y(cosmic::iced::Alignment::Center)
-            .into();*/
 
-        
         if self.keybind_dialog_open_for_index.is_some() {
             // If the dialog should be open, construct and return the dialog view.
             // This dialog element will be the entire output for this branch.
@@ -1577,24 +1637,11 @@ impl App {
 
             let keybind_dialog_element = cosmic::widget::Dialog::new() // Use the path to your Dialog struct
                 .title("Keybind Configuration")
-                //.icon(/*cosmic::widget::icon(cosmic::icon::Id::Keyboard).size(24)*/) // Example, if your dialog supports an icon
-                .control(keybind_dialog_content) // Add the column of controls
-                /* .primary_action(
-                    cosmic::widget::button("Save Changes")
-                        .on_press(Message::SaveKeybindConfiguration),
-                )
-                .secondary_action(
-                    cosmic::widget::button("Cancel")
-                        .on_press(Message::CloseKeybindDialog), // This message should set keybind_dialog_open_for_index to None
-                )*/;
-                    
-            // return keybind_dialog_element; // If this is the main view function
-            keybind_dialog_element.into() // If this is part of a larger expression, this is what this block evaluates to
+                .control(keybind_dialog_content);
+            keybind_dialog_element.into()
                 
         } else {
             // If the dialog is not open, construct and return the base page element.
-            // `base_ui_column` should be defined here. For example:
-            // let base_ui_column = self.build_main_content_column();
             let base_page_element: cosmic::Element<'_, Message> = cosmic::widget::container(base_ui_column)
                 .width(cosmic::iced::Length::Shrink)
                 .height(cosmic::iced::Length::Shrink)
@@ -1603,133 +1650,132 @@ impl App {
                 .align_y(cosmic::iced::Alignment::Center)
                 .into();
 
-            // return base_page_element; // If this is the main view function
-            base_page_element // If this is part of a larger expression, this is what this block evaluates to
+            base_page_element
         }
 
     }
 
     fn get_dialog_card_style(
-    theme: &cosmic::theme::Theme, // Your application's theme type
-    desired_background_alpha: f32,  // The target alpha (0.0 to 1.0)
-) -> cosmic::widget::container::Style {
+        theme: &cosmic::theme::Theme, // Your application's theme type
+        desired_background_alpha: f32,  // The target alpha (0.0 to 1.0)
+    ) -> cosmic::widget::container::Style {
 
-    // TODO: Enforce Styling these were giving interesting results need to check the values.
-    let mut _color_for_dialog_bg: cosmic::iced::Color;
-    let mut themed_background_property = theme.cosmic().bg_color();
+        // TODO: Enforce Styling these were giving interesting results need to check the values.
+        let mut _color_for_dialog_bg: cosmic::iced::Color;
+        let mut themed_background_property = theme.cosmic().bg_color();
 
-   
-    themed_background_property.alpha = desired_background_alpha;
+    
+        themed_background_property.alpha = desired_background_alpha;
 
-    // TODO: Enforce styling currently just black.
-    cosmic::widget::container::Style {
-        background: Some(cosmic::iced::Background::Color(cosmic::iced::Color::from_linear_rgba(
-            0.0,
-            0.0,
-            0.0,
-            desired_background_alpha
-        ))),
-        
-        // Ensure text and other elements are visible against this new background.
-        // You shoulSome(Some(d ideally fetch appro)priat)e contrasting colors from the theme.
-        text_color: Some(cosmic::iced::Color::WHITE), // Example method
-        icon_color: None, // Or derive similarly if you have icons
+        // TODO: Enforce styling currently just black.
+        cosmic::widget::container::Style {
+            background: Some(cosmic::iced::Background::Color(cosmic::iced::Color::from_linear_rgba(
+                0.0,
+                0.0,
+                0.0,
+                desired_background_alpha
+            ))),
+            
+            // Ensure text and other elements are visible against this new background.
+            // You shoulSome(Some(d ideally fetch appro)priat)e contrasting colors from the theme.
+            text_color: Some(cosmic::iced::Color::WHITE), // Example method
+            icon_color: None, // Or derive similarly if you have icons
 
-        border: cosmic::iced::Border {
-            color: cosmic::iced::Color::from_rgba8(0,0,0,0.3).into(), // Example
-            width: 1.0,
-            radius: Radius::new(2).into(), // Example
-        },
-        shadow: cosmic::iced::Shadow::default(), // Default shadow, or a theme-defined one
-    }
-}
-
-fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, Message> {
-    let Some(index) = app_state.keybind_dialog_open_for_index else {
-        // Early return an empty or error element if state is invalid
-        return cosmic::widget::Space::new(cosmic::iced::Length::Shrink, cosmic::iced::Length::Shrink).into();
-    };
-    // The main dialog title will be set by `Dialog::title()`, so we don't need `title_text` here
-    let binding_action_name = app_state.config.key_bindings[index].action.display_name();
-    let title_text = cosmic::widget::text(format!("Recording for Action: {}", binding_action_name)).size(20);
-
-    let divider = widget::divider::horizontal::light();
-
-    let entered_keys_label = cosmic::widget::text("Entered Keys:");
-
-    let mut display_parts: Vec<String> = Vec::new();
-    if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
-        display_parts.push(app_state.keybind_dialog_current_modifiers_text.join(" + "));
-    }
-    if let Some(key_text) = &app_state.keybind_dialog_current_key_text {
-        if display_parts.len() != 0 { // Ensure we don't show actual key presses if we havent typed yet.
-            display_parts.push(key_text.clone());
+            border: cosmic::iced::Border {
+                color: cosmic::iced::Color::from_rgba8(0,0,0,0.3).into(), // Example
+                width: 1.0,
+                radius: Radius::new(2).into(), // Example
+            },
+            shadow: cosmic::iced::Shadow::default(), // Default shadow, or a theme-defined one
         }
     }
-    let current_keys_display_str = if display_parts.is_empty() {
+
+    fn build_keybind_dialog_content<'a>(app_state: &'a App) -> cosmic::Element<'a, Message> {
+        let Some(index) = app_state.keybind_dialog_open_for_index else {
+            // Early return an empty or error element if state is invalid
+            return cosmic::widget::Space::new(cosmic::iced::Length::Shrink, cosmic::iced::Length::Shrink).into();
+        };
+        // The main dialog title will be set by `Dialog::title()`, so we don't need `title_text` here
+        let binding_action_name = app_state.config.key_bindings[index].action.display_name();
+        let title_text = cosmic::widget::text(format!("Recording for Action: {}", binding_action_name)).size(20);
+
+        let divider = widget::divider::horizontal::light();
+
+        let entered_keys_label = cosmic::widget::text("Entered Keys:");
+
+        let mut display_parts: Vec<String> = Vec::new();
         if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
-            // Only modifiers are active, waiting for a key
-            format!("{} + <Key>", app_state.keybind_dialog_current_modifiers_text.join(" + "))
-        } else {
-            "<Press key combination>".to_string()
+            display_parts.push(app_state.keybind_dialog_current_modifiers_text.join(" + "));
         }
-    } else {
-        display_parts.join(" + ")
-    };
+        if let Some(key_text) = &app_state.keybind_dialog_current_key_text {
+            if display_parts.len() != 0 { // Ensure we don't show actual key presses if we havent typed yet.
+                display_parts.push(key_text.clone());
+            }
+        }
+        let current_keys_display_str = if display_parts.is_empty() {
+            if !app_state.keybind_dialog_current_modifiers_text.is_empty() {
+                // Only modifiers are active, waiting for a key
+                format!("{} + <Key>", app_state.keybind_dialog_current_modifiers_text.join(" + "))
+            } else {
+                "<Press key combination>".to_string()
+            }
+        } else {
+            display_parts.join(" + ")
+        };
 
-    let current_keys_text = cosmic::widget::text(current_keys_display_str)
-        .size(24)
-        .height(cosmic::iced::Length::Fixed(40.0));
+        let current_keys_text = cosmic::widget::text(current_keys_display_str)
+            .size(24)
+            .height(cosmic::iced::Length::Fixed(40.0));
 
-    let clear_button = cosmic::widget::button::text("Clear")
-        .class(style::Button::Destructive)
-        .on_press(Message::KeybindDialogClearKeys);
+        let clear_button = cosmic::widget::button::text("Clear")
+            .class(style::Button::Destructive)
+            .on_press(Message::KeybindDialogClearKeys);
 
-    let default_button = cosmic::widget::button::text("Default")
-        .class(style::Button::Suggested)
-        .on_press(Message::KeybindDialogSetToDefault);
+        let default_button = cosmic::widget::button::text("Default")
+            .class(style::Button::Suggested)
+            .on_press(Message::KeybindDialogSetToDefault);
 
-    let hint_text = cosmic::widget::text("Press keys. Enter to Save | Backspace to Cancel.")
-        .size(14);
+        let hint_text = cosmic::widget::text("Press keys. Enter to Save | Backspace to Cancel.")
+            .size(14);
 
-    let buttons_row = cosmic::widget::row()
-        .push(clear_button)
-        .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fixed(10.0)))
-        .push(default_button)
-        .spacing(10);
+        let buttons_row = cosmic::widget::row()
+            .push(clear_button)
+            .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fixed(10.0)))
+            .push(default_button)
+            .spacing(10);
 
-    // This is the inner column containing all the dialog's specific UI elements
-    let dialog_internal_column = cosmic::widget::column()
-        .push(title_text)
-        .push(divider)
-        .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(10.0))) // Top space
-        .push(entered_keys_label)
-        .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(5.0)))
-        .push(current_keys_text)
-        .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(20.0)))
-        .push(buttons_row)
-        .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(15.0)))
-        .push(hint_text)
-        .spacing(15) // Spacing between elements in this inner column
-        .align_x(cosmic::iced::Alignment::Center)
-        .width(cosmic::iced::Length::Fill)    // Inner column fills its parent container (the dialog card)
-        .height(cosmic::iced::Length::Shrink); // Inner column shrinks vertically
+        // This is the inner column containing all the dialog's specific UI elements
+        let dialog_internal_column = cosmic::widget::column()
+            .push(title_text)
+            .push(divider)
+            .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(10.0))) // Top space
+            .push(entered_keys_label)
+            .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(5.0)))
+            .push(current_keys_text)
+            .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(20.0)))
+            .push(buttons_row)
+            .push(cosmic::widget::Space::with_height(cosmic::iced::Length::Fixed(15.0)))
+            .push(hint_text)
+            .spacing(15) // Spacing between elements in this inner column
+            .align_x(cosmic::iced::Alignment::Center)
+            .width(cosmic::iced::Length::Fill)    // Inner column fills its parent container (the dialog card)
+            .height(cosmic::iced::Length::Shrink); // Inner column shrinks vertically
 
-    // Now, wrap this inner_column_content in a new parent Container
-    // This parent Container will have the semi-transparent background and act as the "dialog card".
-    let desired_background_alpha = 0.9; // e.g., 80% opaque (20% transparent)
+        // Now, wrap this inner_column_content in a new parent Container
+        // This parent Container will have the semi-transparent background and act as the "dialog card".
+        let desired_background_alpha = 0.9; // e.g., 80% opaque (20% transparent)
 
-    let dialog_card_container = cosmic::widget::container(dialog_internal_column)
-        .style(move |theme: &cosmic::theme::Theme| { // Apply the style with opacity
-            Self::get_dialog_card_style(theme, desired_background_alpha)
-        })
-        .width(cosmic::iced::Length::Fixed(450.0)) // The dialog "card" has a fixed width
-        .height(cosmic::iced::Length::Shrink)    // The dialog "card" shrinks vertically to its content
-        .padding(20) // Padding of the card itself, around the inner_column_content
-        .align_x(cosmic::iced::Alignment::Center); // Centers the inner_column if it were narrower (it's Fill width)
+        let dialog_card_container = cosmic::widget::container(dialog_internal_column)
+            .style(move |theme: &cosmic::theme::Theme| { // Apply the style with opacity
+                Self::get_dialog_card_style(theme, desired_background_alpha)
+            })
+            .width(cosmic::iced::Length::Fixed(450.0)) // The dialog "card" has a fixed width
+            .height(cosmic::iced::Length::Shrink)    // The dialog "card" shrinks vertically to its content
+            .padding(20) // Padding of the card itself, around the inner_column_content
+            .align_x(cosmic::iced::Alignment::Center); // Centers the inner_column if it were narrower (it's Fill width)
 
-    dialog_card_container.into()
-}
+        dialog_card_container.into()
+    }
 
     
     fn get_default_profile(&self) -> Option<ProfileId> {
@@ -2631,7 +2677,7 @@ impl Application for App {
                             // TODO: Refactor into guard clauses (unless this is a rust anti pattern?)
                             if self.keybind_dialog_current_modifiers_text.len() > 0 {
                                 // Only register non-modifier keys
-                                if !is_just_modifier_key(&key) {
+                                if !key_bind::is_just_modifier_key(&key) {
                                     self.keybind_dialog_current_modifiers_lock = true;
                                     self.keybind_dialog_current_key_text = match key {
                                         cosmic::iced::keyboard::Key::Named(_) => Some(ConfigKeyBinding::key_enum_to_string(&key)),
@@ -2684,9 +2730,9 @@ impl Application for App {
             }
             Message::Modifiers(modifiers) => {
                 self.modifiers = modifiers;
-                modifiers_to_strings(modifiers);
+                key_bind::modifiers_to_strings(modifiers);
                 if self.keybind_dialog_open_for_index.is_some() && !self.keybind_dialog_current_modifiers_lock {
-                    self.keybind_dialog_current_modifiers_text = modifiers_to_strings(modifiers);
+                    self.keybind_dialog_current_modifiers_text = key_bind::modifiers_to_strings(modifiers);
                 }
             }
             Message::MouseEnter(pane) => {
@@ -3306,7 +3352,6 @@ impl Application for App {
 
 
             Message::OpenKeybindDialog(index) => {
-                   log::warn!("OpenKeybindDialog!!");
                 if self.keybind_dialog_open_for_index.is_none() {
                     
                     self.keybind_dialog_current_modifiers_lock = false;
@@ -3723,101 +3768,3 @@ impl Application for App {
         ])
     }
 }
-
-
-
-
-// TODO: Put in a better place.
-// build_keybinding_row_ui function
-fn build_keybinding_row_ui<'a>(
-    app_state: &'a App,
-    binding: &'a config::ConfigKeyBinding,
-    index: usize,
-) -> cosmic::Element<'a, Message> {
-    let action_label_string: String = binding.action.display_name();
-    let action_text = cosmic::widget::text(action_label_string)
-        .width(cosmic::iced::Length::Shrink);
-
-    let mods_display_str = if binding.mods.is_empty() {
-        String::new()
-    } else {
-        binding.mods.split('|').filter(|s| !s.is_empty()).collect::<Vec<&str>>().join(" + ")
-    };
-    let full_key_combo_str = if mods_display_str.is_empty() {
-        binding.key.clone()
-    } else {
-        if binding.key.is_empty() { mods_display_str } else { format!("{} + {}", mods_display_str, &binding.key) }
-    };
-    let key_combo_text_widget = cosmic::widget::text(full_key_combo_str)
-        .width(cosmic::iced::Length::Shrink);
-
-    // Button always shows an "edit" icon. Disabled if another dialog is already open.
-    let is_any_dialog_open = app_state.keybind_dialog_open_for_index.is_some();
-
-
-    
-    // This icon semi looked like an Add/Modify/Change button so roling with it.
-    let mut modify_button = widget::button::custom(icon_cache_get("list-add-symbolic", 16))
-                .padding(8)
-                .class(style::Button::Icon);
-
-    if !is_any_dialog_open {
-        modify_button = modify_button.on_press(Message::OpenKeybindDialog(index));
-    }
-
-    cosmic::widget::row()
-        .push(action_text)
-        .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fixed(20.0)))
-        .push(key_combo_text_widget)
-        .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fill)) // Pushes button to the right
-        .push(modify_button)
-        .spacing(10)
-        .align_y(cosmic::iced::Alignment::Center)
-        .width(cosmic::iced::Length::Shrink)
-        .height(cosmic::iced::Length::Shrink)
-        .into()
-}
-
-
- // Helper to convert cosmic::iced::keyboard::Modifiers to Vec<String>
-fn modifiers_to_strings(mods: cosmic::iced::keyboard::Modifiers) -> Vec<String> {
-     let mut strings = Vec::new();
-    
-    // Check which modifiers are active and add corresponding strings
-    if mods.control() { 
-        strings.push("Ctrl".to_string()); 
-    }
-    if mods.alt() { 
-        strings.push("Alt".to_string()); 
-    }
-    if mods.shift() { 
-        strings.push("Shift".to_string()); 
-    }
-    if mods.logo() { 
-        strings.push("Super".to_string()); 
-    }
-    
-    strings.sort(); // For consistent order
-    
-    // Add more detailed logging about the final result
-    log::warn!("modifiers_to_strings result: {:?}", strings);
-    
-    strings
-} 
-
-
-
-// Assuming that LOGO is synonymous with SUPER... 
-// Alt + Shift + Ctrl + Super
-// Helper to check if a key is primarily a modifier
-fn is_just_modifier_key(key: &cosmic::iced::keyboard::Key) -> bool {
-    matches!(key,
-        cosmic::iced::keyboard::Key::Named(
-            cosmic::iced::keyboard::key::Named::Alt |
-            cosmic::iced::keyboard::key::Named::Control |
-            cosmic::iced::keyboard::key::Named::Shift |
-            cosmic::iced::keyboard::key::Named::Super 
-        )
-    )
-}
-
