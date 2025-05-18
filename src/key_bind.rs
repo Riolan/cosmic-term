@@ -159,7 +159,7 @@ pub fn modifiers_to_strings(mods: cosmic::iced::keyboard::Modifiers) -> Vec<Stri
     strings.sort(); // For consistent order
     
     // Add more detailed logging about the final result
-    log::warn!("modifiers_to_strings result: {:?}", strings);
+    //log::warn!("modifiers_to_strings result: {:?}", strings);
     
     strings
 } 
