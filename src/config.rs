@@ -28,6 +28,13 @@ pub enum AppTheme {
     System,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum ClickUrlSetting {
+    Disabled,
+    Enabled,
+    EnabledWithMod,
+}
+
 impl AppTheme {
     pub fn theme(&self) -> theme::Theme {
         match self {
@@ -314,6 +321,7 @@ pub struct Config {
     pub focus_follow_mouse: bool,
     pub default_profile: Option<ProfileId>,
     pub key_bindings: Vec<ConfigKeyBinding>,
+    pub url_setting_selected : ClickUrlSetting,
 }
 
 impl Default for Config {
@@ -338,6 +346,7 @@ impl Default for Config {
             use_bright_bold: false,
             default_profile: None,
             key_bindings: build_default_key_bindings(),
+            url_setting_selected: ClickUrlSetting::Enabled,
         }
     }
 }

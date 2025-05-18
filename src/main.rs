@@ -56,7 +56,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use config::{
-    AppTheme, ColorScheme, ColorSchemeId, ColorSchemeKind, Config, ConfigKeyBinding, Profile, ProfileId, CONFIG_VERSION
+    AppTheme, ClickUrlSetting, ColorScheme, ColorSchemeId, ColorSchemeKind, Config, ConfigKeyBinding, Profile, ProfileId, CONFIG_VERSION
 };
 
 
@@ -452,6 +452,8 @@ pub enum Message {
     CloseKeybindDialogNoSave,      // User cancelled dialog (e.g., pressed Esc or a Cancel button)    
     KeybindDialogClearKeys,        // "Clear" button in dialog pressed
     KeybindDialogSetToDefault,     // "Default" button in dialog pressed
+    // URL
+    ClickUrlSel(ClickUrlSetting),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -473,6 +475,7 @@ pub struct App {
     config_handler: Option<cosmic_config::Config>,
     config: Config,
     key_binds: HashMap<KeyBind, Action>,
+    url_settings: Vec<String>,
     app_themes: Vec<String>,
     font_names: Vec<String>,
     font_size_names: Vec<String>,
@@ -1259,6 +1262,12 @@ impl App {
             AppTheme::Light => 2,
             AppTheme::System => 0,
         };
+        let click_url_setting_selection = match self.config.url_setting_selected {
+            ClickUrlSetting::Disabled => 0,
+            ClickUrlSetting::Enabled => 1,
+            ClickUrlSetting::EnabledWithMod => 2,
+        };
+
         let dark_selected = self
             .theme_names_dark
             .iter()
@@ -1434,16 +1443,35 @@ impl App {
                 .toggler(self.config.focus_follow_mouse, Message::FocusFollowMouse),
         );
 
+        let url_settings  = widget::settings::section()
+            .title(fl!("appearance"))
+            .add(
+                widget::settings::item::builder(fl!("url-settings")).control(widget::dropdown(
+                    &self.url_settings,
+                    Some(click_url_setting_selection),
+                    move |index| {
+                        Message::ClickUrlSel(match index {
+                            0 => ClickUrlSetting::Disabled,
+                            1 => ClickUrlSetting::Enabled,
+                            2 => ClickUrlSetting::EnabledWithMod,
+                            _ => ClickUrlSetting::Enabled,
+                        })
+                    },
+                )),
+            );
+
         let advanced_section = widget::settings::section().title(fl!("advanced")).add(
             widget::settings::item::builder(fl!("show-headerbar"))
                 .description(fl!("show-header-description"))
                 .toggler(self.config.show_headerbar, Message::ShowHeaderBar),
+            
         );
 
         widget::settings::view_column(vec![
             appearance_section.into(),
             font_section.into(),
             splits_section.into(),
+            url_settings.into(),
             advanced_section.into(),
         ])
         .into()
@@ -1844,6 +1872,8 @@ impl Application for App {
 
         let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
 
+        let url_settings = vec![fl!("url-disabled"), fl!("url-enabled"), fl!("url-enabled-ctrl")];
+
         let font_name_faces_map = {
             let mut font_name_faces_map = BTreeMap::<_, Vec<_>>::new();
             let mut font_system = font_system().write().unwrap();
@@ -1984,6 +2014,7 @@ impl Application for App {
             keybind_dialog_current_modifiers_text: Vec::new(),
             keybind_dialog_current_key_text: None,
             keybind_dialog_current_modifiers_lock: false,
+            url_settings,
         };
 
         // Initial update from the default keybinds to the saved.
@@ -2582,8 +2613,31 @@ impl Application for App {
                 }
             }
             Message::LaunchUrl(url) => {
-                if let Err(err) = open::that_detached(&url) {
-                    log::warn!("failed to open {:?}: {}", url, err);
+                // VVV
+                // Lauch Url, so user clicked on it - but we want to modify it so that it
+
+                // Instead let's just make it so that 
+                // user has choice of Disable Clicking URL
+                // Clicking Url (default)
+                // Ctrl + Clicking URL
+                
+                match self.config.url_setting_selected {
+                    ClickUrlSetting::Disabled => {
+                        // Purposefully empty
+                    }
+                    ClickUrlSetting::Enabled => {
+                        // Default opening
+                        if let Err(err) = open::that_detached(&url) {
+                            log::warn!("failed to open {:?}: {}", url, err);
+                        }
+                    }
+                    ClickUrlSetting::EnabledWithMod => {
+                        if self.modifiers.control() {
+                            if let Err(err) = open::that_detached(&url) {
+                                log::warn!("failed to open {:?}: {}", url, err);
+                            }
+                        }
+                    }
                 }
             }
             Message::Modifiers(modifiers) => {
@@ -3326,6 +3380,10 @@ impl Application for App {
                     self.keybind_dialog_current_modifiers_text.sort();
                     self.keybind_dialog_current_key_text = if default_binding.key.is_empty() { None } else { Some(default_binding.key.clone()) };
                 }
+            }
+            Message::ClickUrlSel(click_url_setting ) => {
+                config_set!(url_setting_selected, click_url_setting);
+                return self.update_config();
             }
 
         }

@@ -30,6 +30,12 @@ remain-open = Remain open after child process exits.
 ## Settings
 settings = Settings
 
+url-settings = URL Settings
+url-disabled = Disabled
+url-enabled = Enabled
+url-enabled-ctrl = Enabled + [CTRL]
+
+
 ### KeyBinds
 keybinds = Keybinds
 
