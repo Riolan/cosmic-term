@@ -1081,7 +1081,6 @@ where
                         }
                         // Update context menu state
                         if let Some(on_context_menu) = &self.on_context_menu {
-                            log::warn!(" >>> Update context menu state");
                             shell.publish((on_context_menu)(match self.context_menu {
                                 Some(_) => None,
                                 None => match button {
@@ -1107,7 +1106,7 @@ where
                     let location = terminal
                         .viewport_to_point(TermPoint::new(row as usize, TermColumn(col as usize)));
 
-                        
+
                     if let Some(on_open_hyperlink) = &self.on_open_hyperlink {
                         if let Some(match_) = terminal
                             .regex_matches

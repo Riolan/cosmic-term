@@ -797,18 +797,16 @@ impl App {
             // of how I have modified updates to context.
             // additionally - context can change if context drawer is brought out after
             // so need to account for that
-            log::warn!("<>< Updating Context Page from find!");
             Message::ToggleContextPage(ContextPage::NONE); // close context drawer
 
             widget::text_input::focus(self.find_search_id.clone())
         } else if let Some(terminal_id) = self.terminal_ids.get(&self.pane_model.focused()).cloned() {
-            self::warn!("UPDATED TO FOCUS!");
             // SHOULD CHECK TO ENSURE THAT CONTEXT IS NOT SET
             // TODO: Verify if this is intended but note how it previously
             // performed would steal focus if window was changed i.e. enlarged and
             // would no longer be able to properly use the Context drawers/page.
             if self.context_page != ContextPage::NONE {
-                self::warn!("Don't allow focus to change to terminal if we context drawer out!");
+                // Don't allow focus to change to term if context drawer is out.
                 Task::none()
             } else  {
                 widget::text_input::focus(terminal_id)
@@ -2027,10 +2025,8 @@ impl Application for App {
 
     //TODO: currently the first escape unfocuses, and the second calls this function
     fn on_escape(&mut self) -> Task<Message> {
-        log::warn!("ON ESCAPE CONTEXT");
         if self.core.window.show_context {
             // Close context drawer if open
-            log::warn!("ON ESCAPE CONTEXT FALSE");
             self.core.window.show_context = false;
             if self.context_page == ContextPage::Keybinds {
                 self.keybind_dialog_open_for_index = None;
@@ -2039,7 +2035,6 @@ impl Application for App {
 
         } else if self.find {
             // Close find if open
-            log::warn!("ON ESCAPE CONTEXT CLOSE FIND IF OPEN");
 
             // To remove artifacts close context is find is opened.
             // Otherwise the context doesn't allowed for it to be shared.
@@ -2057,15 +2052,12 @@ impl Application for App {
     }
 
     fn on_context_drawer(&mut self) -> Task<Message> {
-        log::warn!("ON CONTEXT DRAWER");
         if self.core.window.show_context {
             self.context_page = ContextPage::NONE;
             self.context_drawer();
-            log::warn!("ON CONTEXT DRAWER: NONE");
             Task::none()
         } else {
-            log::warn!("ON CONTEXT DRAWER: UPDATE FOCUS");
-               self.context_page = ContextPage::NONE;
+            self.context_page = ContextPage::NONE;
             self.context_drawer();
             self.update_focus()
         }
@@ -2076,7 +2068,6 @@ impl Application for App {
     /// a messasge with update. So, we should likely attempt to verify context informaition
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         // Helper for updating config values efficiently
-        log::warn!(" >>> Current context page is: {:#?}", self.context_page);
 
         macro_rules! config_set {
             ($name: ident, $value: expr) => {
@@ -2642,11 +2633,7 @@ impl Application for App {
             }
             Message::Modifiers(modifiers) => {
                 self.modifiers = modifiers;
-
-                log::warn!("Index is some: {:?}, and Not Locked: {}", self.keybind_dialog_open_for_index.is_some(), !self.keybind_dialog_current_modifiers_lock);
                 modifiers_to_strings(modifiers);
-                log::warn!("---------------------------------");
-
                 if self.keybind_dialog_open_for_index.is_some() && !self.keybind_dialog_current_modifiers_lock {
                     self.keybind_dialog_current_modifiers_text = modifiers_to_strings(modifiers);
                 }
@@ -3152,7 +3139,6 @@ impl Application for App {
             }
             Message::ToggleContextPage(context_page) => {
 
-                log::warn!("Toggle Context page called");
                 if self.context_page == context_page {
                     self.core.window.show_context = !self.core.window.show_context;
                 } else {
@@ -3226,13 +3212,11 @@ impl Application for App {
                 }
             },
             Message::WindowFocused => {
-                log::warn!("WindowFocusedpage called");
 
                 self.pane_model.update_terminal_focus();
                 return self.update_focus();
             }
             Message::WindowUnfocused => {
-                log::warn!("WindowUnfocused page called");
 
                 self.pane_model.unfocus_all_terminals();
             }
@@ -3323,7 +3307,7 @@ impl Application for App {
                         // For now just don't save and print an error
                         // TODO: Better warnings
                         if is_duplicate {
-                            log::warn!("Save failed: Keybinding was a dublicate [TODO SHOWCASE KEYS/ACTION].");
+                            log::warn!("Save failed: Keybinding was a duplicate [TODO SHOWCASE KEYS/ACTION].");
                             break 'block;
                         }
 
@@ -3751,26 +3735,21 @@ fn modifiers_to_strings(mods: cosmic::iced::keyboard::Modifiers) -> Vec<String> 
     // Check which modifiers are active and add corresponding strings
     if mods.control() { 
         strings.push("Ctrl".to_string()); 
-        log::warn!("Ctrl modifier detected");
     }
     if mods.alt() { 
         strings.push("Alt".to_string()); 
-        log::warn!("Alt modifier detected");
     }
     if mods.shift() { 
         strings.push("Shift".to_string()); 
-        log::warn!("Shift modifier detected");
     }
     if mods.logo() { 
         strings.push("Super".to_string()); 
-        log::warn!("Super/Logo modifier detected");
     }
     
     strings.sort(); // For consistent order
     
     // Add more detailed logging about the final result
     log::warn!("modifiers_to_strings result: {:?}", strings);
-    log::warn!("Raw modifiers struct: {:?}", mods);
     
     strings
 } 
