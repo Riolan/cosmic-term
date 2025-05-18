@@ -4,13 +4,10 @@
 use alacritty_terminal::tty::Options;
 use alacritty_terminal::{event::Event as TermEvent, term, term::color::Colors as TermColors, tty};
 use cosmic::iced::clipboard::dnd::DndAction;
-use cosmic::iced::clipboard::read;
 use cosmic::iced::Radius;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::menu::key_bind::{KeyBind, Modifier};
-use cosmic::widget::settings::item;
-use cosmic::iced::widget::{Column, Row, Text, scrollable, container};
-use cosmic::widget::{DndDestination, Popover};
+use cosmic::widget::{DndDestination};
 use cosmic::{
     action,
     app::{context_drawer, Core, Settings, Task},
@@ -25,11 +22,6 @@ use cosmic::{
         mouse::{Button as MouseButton, Event as MouseEvent},
         stream, window, Alignment, Color, Event, Length, Limits, Padding, Point, Subscription,
     },
-    iced_core::{
-        keyboard::{
-            key::Named,
-        },
-    },
     style,
     widget::{self, button, pane_grid, segmented_button, PaneGrid},
     Application, ApplicationExt, Element,
@@ -37,13 +29,11 @@ use cosmic::{
 
 
 
-use cosmic::{surface, Apply};
+use cosmic::{iced_core, surface, Apply};
 use cosmic_files::dialog::{Dialog, DialogKind, DialogMessage, DialogResult};
 use cosmic_text::{fontdb::FaceInfo, Family, Stretch, Weight};
 use localize::LANGUAGE_SORTER;
-use log::warn;
-use palette::IntoColor;
-use std::hash::Hash;
+
 use std::{
     any::TypeId,
     cmp,
@@ -66,7 +56,7 @@ mod mouse_reporter;
 use icon_cache::IconCache;
 mod icon_cache;
 
-use key_bind::{build_default_key_bindings, key_binds};
+use key_bind::{key_binds};
 mod key_bind;
 
 mod localize;
@@ -1511,61 +1501,94 @@ impl App {
     }
     
 
-
-
-
-
     fn build_keybinding_row_ui<'a>(
-        &self, /*app_state: &'a App,*/
-        binding: &'a config::ConfigKeyBinding,
-        index: usize,
-    ) -> cosmic::Element<'a, Message> {
-        let action_label_string: String = binding.action.display_name();
-        let action_text = cosmic::widget::text(action_label_string)
-            .width(cosmic::iced::Length::Shrink);
+            &self,
+            binding: &'a config::ConfigKeyBinding,
+            index: usize,
+        ) -> cosmic::Element<'a, Message> {
+            let action_label_string: String = binding.action.display_name();
+            let action_text = cosmic::widget::text(action_label_string)
+                .width(cosmic::iced::Length::Shrink);
+            let mods_display_str = if binding.mods.is_empty() {
+                String::new()
+            } else {
+                binding.mods.split('|').filter(|s| !s.is_empty()).collect::<Vec<&str>>().join(" + ")
+            };
 
-        let mods_display_str = if binding.mods.is_empty() {
-            String::new()
-        } else {
-            binding.mods.split('|').filter(|s| !s.is_empty()).collect::<Vec<&str>>().join(" + ")
-        };
-        let full_key_combo_str = if mods_display_str.is_empty() {
-            binding.key.clone()
-        } else {
-            if binding.key.is_empty() { mods_display_str } else { format!("{} + {}", mods_display_str, &binding.key) }
-        };
-        let key_combo_text_widget = cosmic::widget::text(full_key_combo_str)
-            .width(cosmic::iced::Length::Shrink);
+            //Theme::cosmic(&self)
+        // let current_app_theme: &cosmic_theme::Theme = Theme::cosmic(&self.config.app_theme.theme()); // 1. Get the theme (owned)
 
-        // Button always shows an "edit" icon. Disabled if another dialog is already open.
-        let is_any_dialog_open = self.keybind_dialog_open_for_index.is_some();
+            //let action_container : Container = cosmic::widget::container(action_text) // Assuming action_text is Element
+            //   .padding(10);
 
 
-        
-        // This icon semi looked like an Add/Modify/Change button so roling with it.
-        let mut modify_button = widget::button::custom(icon_cache_get("list-add-symbolic", 16))
-                    .padding(8)
-                    .class(style::Button::Icon);
+            let full_key_combo_str = if mods_display_str.is_empty() {
+                binding.key.clone()
+            } else {
+                if binding.key.is_empty() { mods_display_str } else { format!("{} + {}", mods_display_str, &binding.key) }
+            };
+            let key_combo_text_widget = cosmic::widget::text(full_key_combo_str)
+                .width(cosmic::iced::Length::Shrink);
+            // Button always shows an "edit" icon. Disabled if another dialog is already open.
+            let is_any_dialog_open = self.keybind_dialog_open_for_index.is_some();
 
-        if !is_any_dialog_open {
-            modify_button = modify_button.on_press(Message::OpenKeybindDialog(index));
+            // This icon semi looked like an Add/Modify/Change button so roling with it.
+            let mut modify_button = widget::button::custom(icon_cache_get("edit-krita-sharp-kde-gpl", 16))
+                        .class(style::Button::Icon);
+
+            if !is_any_dialog_open {
+                modify_button = modify_button.on_press(Message::OpenKeybindDialog(index));
+            }
+            cosmic::widget::row()
+                .push(
+                        widget::container(action_text)
+                        .padding(10)
+                        //TODO: move style to libcosmic
+                        .style(|theme| {
+                            let cosmic = theme.cosmic();
+                            let component = &cosmic.background.component;
+                            widget::container::Style {
+                                icon_color: Some(component.on.into()),
+                                text_color: Some(component.on.into()),
+                                background: Some(iced_core::Background::Color(component.base.into())),
+                                border: iced_core::Border {
+                                    radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                                    width: 1.0,
+                                    color: component.divider.into(),
+                                },
+                                ..Default::default()
+                            }
+                        })
+                )
+                .push(
+                    widget::container(key_combo_text_widget)
+                        .padding(10)
+                        //TODO: move style to libcosmic
+                        .style(|theme| {
+                            let cosmic = theme.cosmic();
+                            let component = &cosmic.primary.component;
+                            widget::container::Style {
+                                icon_color: Some(component.on.into()),
+                                text_color: Some(component.on.into()),
+                                background: Some(iced_core::Background::Color(component.base.into())),
+                                border: iced_core::Border {
+                                    radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+                                    width: 1.0,
+                                    color: component.divider.into(),
+                                },
+                                ..Default::default()
+                            }
+                        })
+                )
+                .push(
+                    modify_button
+                )
+                .spacing(4)
+                .align_y(cosmic::iced::Alignment::Center)
+                .width(cosmic::iced::Length::Shrink)
+                .height(cosmic::iced::Length::Shrink)
+                .into()
         }
-
-        cosmic::widget::row()
-            .push(action_text)
-            .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fixed(20.0)))
-            .push(key_combo_text_widget)
-            .push(cosmic::widget::Space::with_width(cosmic::iced::Length::Fill)) // Pushes button to the right
-            .push(modify_button)
-            .spacing(10)
-            .align_y(cosmic::iced::Alignment::Center)
-            .width(cosmic::iced::Length::Shrink)
-            .height(cosmic::iced::Length::Shrink)
-            .into()
-    }
-
-
-
 
 
     // Handles user presing to modify "Keybinds" (Key Binds, Keys, Mods)
@@ -1617,7 +1640,7 @@ impl App {
             .spacing(8).width(cosmic::iced::Length::Shrink).padding([0,5,0,5])
             .height(cosmic::iced::Length::Shrink);
         let scrollable_view = cosmic::widget::scrollable(keybindings_list_col)
-            .width(cosmic::iced::Length::Shrink).height(cosmic::iced::Length::Fixed(400.0));
+            .width(cosmic::iced::Length::Fixed(400.0)).height(cosmic::iced::Length::Fixed(400.0));
         let scrollable_wrapper = cosmic::widget::container(scrollable_view)
             .width(cosmic::iced::Length::Fixed(600.0)).height(cosmic::iced::Length::Shrink).align_x(cosmic::iced::Alignment::Center);
         

@@ -38,6 +38,7 @@ impl IconCache {
         bundle!("go-up-symbolic", 16);
         bundle!("view-more-symbolic", 16);
         bundle!("window-close-symbolic", 16);
+        bundle!("edit-krita-sharp-kde-gpl", 16); // TODO: Use Cosmic specific
 
         Self { cache }
     }
