@@ -43,6 +43,7 @@ use cosmic_text::{fontdb::FaceInfo, Family, Stretch, Weight};
 use localize::LANGUAGE_SORTER;
 use log::warn;
 use palette::IntoColor;
+use std::hash::Hash;
 use std::{
     any::TypeId,
     cmp,
@@ -67,7 +68,7 @@ mod mouse_reporter;
 use icon_cache::IconCache;
 mod icon_cache;
 
-use key_bind::key_binds;
+use key_bind::{build_default_key_bindings, key_binds};
 mod key_bind;
 
 mod localize;
@@ -175,6 +176,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     settings = settings.theme(config.app_theme.theme());
     settings = settings.size_limits(Limits::NONE.min_width(360.0).min_height(180.0));
 
+    // Overide default keybinds
+
     let flags = Flags {
         config_handler,
         config,
@@ -218,7 +221,7 @@ pub enum Action {
     Profiles,
     SaveKeyBindings,
     SelectAll,
-    Settings,
+    Settings, 
     ShowHeaderBar(bool),
     TabActivate0,
     TabActivate1,
@@ -440,22 +443,6 @@ pub enum Message {
     ZoomOut,
     ZoomReset,
 
-    /// User clicked "Record New Keys" for the binding at this `usize` index
-    /// in `self.config.key_binds`.
-    //StartRecordingKeyBinding(usize),
-
-    /// User clicked "Recording" button or pressed Escape to cancel recording
-    /// for the binding at the given `usize` index.
-   // CancelRecordingKeyBinding(usize),
-
-    /// Internal message when a key combination is captured by the global event handler
-    /// during recording mode.
-    ProcessCapturedKeyCombination {
-        binding_index: usize,
-        key_code: cosmic::iced::keyboard::Key,       
-        key_modifiers: cosmic::iced::keyboard::Modifiers, 
-    },
-
     /// Internal message to trigger saving the `self.config.key_bindings` to disk.
     PersistKeyBindingsConfig,
 
@@ -520,8 +507,6 @@ pub struct App {
     profile_expanded: Option<ProfileId>,
     show_advanced_font_settings: bool,
     modifiers: Modifiers,
-    currently_recording_binding_index: Option<usize>,
-
     // State for the keybinding dialog:
     pub keybind_dialog_open_for_index: Option<usize>, // Some(index) if dialog is open for this binding
     pub keybind_dialog_current_modifiers_text: Vec<String>, // User-friendly modifier names, e.g., ["Ctrl", "Shift"]
@@ -667,13 +652,9 @@ impl App {
 
     // The function to update the key binding map from loaded config
     fn update_keybinds(&mut self) {
-        // 1. Get the base map from the hardcoded defaults
-        //    This provides the starting set of bindings.
-        let mut key_binds = key_binds(); // Call the existing function that returns HashMap<KeyBind, Action>
-
-        // 2. Iterate through the loaded config bindings (which are ConfigKeyBinding)
+        // Clear the current settings so we don't maintain old ones accidentally.
+        self.key_binds = HashMap::new();
         for config_binding in &self.config.key_bindings {
-            // 3. Convert the config format (strings) into the internal input handler format (KeyBind)
             let key = Self::parse_key_string(&config_binding.key); // Use Self:: if it's a method on your struct
             let modifiers_vec = Self::parse_modifier_string(&config_binding.mods); // Use Self:: if it's a method
 
@@ -683,7 +664,6 @@ impl App {
                 log::warn!("Skipping binding with unknown key: '{}'", config_binding.key);
                 continue; // Skip this binding if the key is unknown
             }
-            // You might add similar checks for modifier parsing errors if needed
 
             // Create the KeyBind struct for the HashMap key
             let key_bind = KeyBind {
@@ -691,13 +671,10 @@ impl App {
                 modifiers: modifiers_vec, // Use the Vec<Modifier> directly
             };
 
-            // 4. Insert into the map, allowing config bindings to override defaults
-            //    HashMap::insert replaces the value if the key already exists.
-            //    This correctly handles overriding default bindings.
-            key_binds.insert(key_bind, config_binding.action.clone()); // Clone action if Action isn't Copy
+            self.key_binds.insert(key_bind, config_binding.action.clone()); // Clone action if Action isn't Copy
         }
         // 5. Store the resulting map in the application's state
-        self.key_binds = key_binds;
+        //self.key_binds = key_binds;
     }
 
 
@@ -1969,7 +1946,7 @@ impl Application for App {
             pane_model,
             config_handler: flags.config_handler,
             config: flags.config,
-            key_binds: key_binds(),
+            key_binds: HashMap::new(), // since we call update keybinds by default start with empty
             app_themes,
             font_names,
             font_size_names,
@@ -2003,13 +1980,14 @@ impl Application for App {
             profile_expanded: None,
             show_advanced_font_settings: false,
             modifiers: Modifiers::empty(),
-            currently_recording_binding_index: None,
             keybind_dialog_open_for_index: None,
             keybind_dialog_current_modifiers_text: Vec::new(),
             keybind_dialog_current_key_text: None,
             keybind_dialog_current_modifiers_lock: false,
         };
 
+        // Initial update from the default keybinds to the saved.
+        app.update_keybinds();
         app.set_curr_font_weights_and_stretches();
         let command = Task::batch([app.update_config(), app.update_title(None)]);
 
@@ -3221,70 +3199,6 @@ impl Application for App {
             }
 
 
-            Message::ProcessCapturedKeyCombination { binding_index, key_code, key_modifiers } => {
-                log::info!("Processing captured keys for binding index: {}", binding_index);
-                self.currently_recording_binding_index = None; // Stop recording mode immediately
-
-                // 1. Convert captured iced keys to your String formats for ConfigKeyBinding
-                let new_key_string = match key_code {
-                    Key::Character(s) => s.to_lowercase(), // Store as lowercase for consistency
-                    Key::Named(named_key) => {
-                        // Convert named key to a string.
-                        // This should ideally match the format your `parse_key_string` expects
-                        // or the format produced by `build_default_key_bindings`.
-                        // Using Debug format for NamedKey is a common approach.
-                        format!("{:?}", named_key)
-                    },
-                    _ => {
-                        log::warn!("Captured an unsupported/unknown key type: {:?}", key_code);
-                        // Decide how to handle: keep old, clear, or use a placeholder.
-                        // For now, let's assume we want to effectively clear/invalidate it if unknown.
-                        // Or, you could choose to not update if the key is unknown.
-                        if let Some(binding_to_clear) = self.config.key_bindings.get_mut(binding_index) {
-                            binding_to_clear.key = "unknown_captured_key".to_string(); // Or empty string
-                            binding_to_clear.mods = String::new();
-                        }
-                        // Then trigger persistence
-                        return Task::perform(async {}, |_| cosmic::Action::App(Message::PersistKeyBindingsConfig));
-                    }
-                };
-
-                let mut mods_vec = Vec::new();
-                if key_modifiers.control() { mods_vec.push("Control"); }
-                if key_modifiers.alt() { mods_vec.push("Alt"); }
-                if key_modifiers.shift() { mods_vec.push("Shift"); }
-                if key_modifiers.logo() { mods_vec.push("Super"); } // Or "Meta" or your preferred term
-                let new_mods_string = mods_vec.join("|");
-
-                // 2. Update the in-memory config.key_bindings
-                if let Some(binding_to_update) = self.config.key_bindings.get_mut(binding_index) {
-                    binding_to_update.key = new_key_string.clone(); // Clone if new_key_string is used again
-                    binding_to_update.mods = new_mods_string.clone(); // Clone if new_mods_string is used again
-                    log::info!(
-                        "In-memory config updated for index {}: Action {:?}, New Keys: {} + {}",
-                        binding_index,
-                        binding_to_update.action,
-                        new_mods_string,
-                        new_key_string
-                    );
-                } else {
-                    log::error!("Invalid binding_index {} for ProcessCapturedKeyCombination", binding_index);
-                    return Task::none(); // Critical error, index out of bounds
-                }
-
-                // 3. Rebuild your runtime keybinding map (self.key_binding_map)
-                // This calls your existing method to parse self.config.key_bindings
-                // and update the active key map.
-                self.update_keybinds();
-                log::info!("Runtime key_binding_map has been rebuilt.");
-
-
-                // 4. Trigger persistence of the entire key_bindings configuration
-                // We return a Task that will send another message to handle the actual save.
-                // This keeps the current message handler focused.
-                return Task::perform(async {}, |_| cosmic::Action::App(Message::PersistKeyBindingsConfig));
-            }
-
             Message::PersistKeyBindingsConfig => {
                 log::info!("Attempting to persist key_bindings to config file...");
                 if let Some(config_handler_ref) = &self.config_handler {
@@ -3324,6 +3238,8 @@ impl Application for App {
                     !self.keybind_dialog_current_modifiers_text.is_empty() {
                         self.keybind_dialog_current_modifiers_lock = false;
 
+                        // I.e. Shift + T is just Capital T which is a character, user may not think about this while setting
+                        // and it may cause difficulties.
                         // CAN NOT START WITH SHIFT TOO MANY UNINTENDED BEHAVIOR
                         if self.keybind_dialog_current_modifiers_text[0].to_ascii_uppercase() == "SHIFT" {
                             log::warn!("Save failed: Keybinding for you cannot begin a Keybind with modifier of \'SHIFT\'.");
@@ -3331,8 +3247,31 @@ impl Application for App {
                         }
 
 
+
                         let new_mods_str = self.keybind_dialog_current_modifiers_text.join("|");
                         let new_key_str = self.keybind_dialog_current_key_text.as_ref().unwrap().clone(); // Safe due to check
+
+
+
+                        let is_duplicate = self.config.key_bindings
+                            .iter()
+                            .enumerate()
+                            .any(|(i, existing_binding)| {
+                                // Check if it's a *different* binding (not the one at the current `index`)
+                                // that has the same new mods and new key.
+                                i != index && // `index` is the index of the keybinding being currently modified
+                                existing_binding.mods == new_mods_str &&
+                                existing_binding.key == new_key_str
+                            });
+
+                        // Check for duplicates
+                        // I.e. Ctrl + [,] cannot be already defined if another keybinds wants it.
+                        // For now just don't save and print an error
+                        // TODO: Better warnings
+                        if is_duplicate {
+                            log::warn!("Save failed: Keybinding was a dublicate [TODO SHOWCASE KEYS/ACTION].");
+                            break 'block;
+                        }
 
                         self.config.key_bindings[index].mods = new_mods_str;
                         self.config.key_bindings[index].key = new_key_str;

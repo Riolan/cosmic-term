@@ -36,6 +36,9 @@ pub fn key_binds() -> HashMap<KeyBind, Action> {
     bind!([Ctrl, Shift], Key::Character("W".into()), TabClose);
     bind!([Ctrl], Key::Character(",".into()), Settings);
 
+    // Open key bindings
+    bind!([Ctrl, Alt], Key::Character(",".into()), Keybinds);
+
     // Ctrl+Alt+D splits horizontally, Ctrl+Alt+R splits vertically, Ctrl+Shift+X maximizes split
     //TODO: Adjust bindings as desired by UX
     bind!([Ctrl, Alt], Key::Character("d".into()), PaneSplitHorizontal);
@@ -107,8 +110,6 @@ pub fn key_binds() -> HashMap<KeyBind, Action> {
     // CTRL+Alt+L clears the scrollback.
     bind!([Ctrl, Alt], Key::Character("L".into()), ClearScrollback);
 
-    // Silly test...
-    bind!([Ctrl, Alt, Shift], Key::Character("S".into()), SaveKeyBindings);
 
     key_binds
 }

@@ -72,6 +72,8 @@ pub fn context_menu<'a>(
         divider::horizontal::light(),
         menu_item(fl!("new-tab"), Action::TabNew),
         menu_item(fl!("menu-settings"), Action::Settings),
+        menu_item(fl!("menu-keybinds"), Action::Keybinds),
+
         menu_checkbox(
             fl!("show-headerbar"),
             config.show_headerbar,
